@@ -213,9 +213,14 @@ class FaultBufferTool:
     def get_utm_crs(self, longitude, latitude):
         """Calculate the appropriate UTM CRS based on coordinates"""
         # Calculate UTM zone
+        # The Earth is divided into 60 UTM zones, each 6 degrees wide
+        # We add 180 to shift from (-180,180) range to (0,360) range
+        # Then divide by 6 to get the zone number (1-60)
         zone = int((longitude + 180) / 6) + 1
         
         # Determine if Northern or Southern hemisphere
+        # - 326xx for Northern hemisphere (latitude > 0)
+        # - 327xx for Southern hemisphere (latitude < 0)
         if latitude > 0:
             epsg = f"326{zone:02d}"  # Northern hemisphere
         else:
@@ -267,13 +272,8 @@ class FaultBufferTool:
                 
                 # Get and check the layer's CRS
                 source_crs = input_layer.crs()
-                
-                # # Create a QgsDistanceArea object for accurate distance calculations
-                # distance_calc = QgsDistanceArea()
-                # distance_calc.setSourceCrs(source_crs, QgsProject.instance().transformContext())
-                # distance_calc.setEllipsoid(source_crs.ellipsoidAcronym())
-                
-                #If the CRS is isgeographic, (like EPSG:4326), we'll need to transform to a projected CRS
+                               
+                # If the CRS is isgeographic, (like EPSG:4326), we'll need to transform to a projected CRS
                 if source_crs.isGeographic():
                     # Print some debug information
                     QgsMessageLog.logMessage(f"Source CRS is geographic: {source_crs.description()}", "Buffer Tool")
@@ -281,6 +281,7 @@ class FaultBufferTool:
                     # Get the UTM zome for the layer's extent
                     center_point = input_layer.extent().center()
                     utm_crs = self.get_utm_crs(center_point.x(), center_point.y())
+  
 
                     QgsMessageLog.logMessage(f"Selected UTM CRS: {utm_crs.description()}", "Buffer Tool")
                     
@@ -295,10 +296,15 @@ class FaultBufferTool:
                     buffer_layer = QgsVectorLayer(f"Polygon?crs={source_crs.authid()}", "buffers", "memory")
                     transform = None
                 
+                QgsMessageLog.logMessage(f"Input CRS: {source_crs.authid()}", "FaultBufferTool")
+                QgsMessageLog.logMessage(f"Buffer layer CRS: {buffer_layer.crs().authid()}", "FaultBufferTool")
+                # QgsMessageLog.logMessage(f"UTM CRS for calculations: {utm_crs.authid()}", "FaultBufferTool")
+                
                 # Add this debugging code to the plugin just before the field check
                 QgsMessageLog.logMessage("Checking for required fields...", "FaultBufferTool")
                 QgsMessageLog.logMessage(f"Available fields: {[f.name() for f in input_layer.fields()]}", "FaultBufferTool")
 
+                # Checking for required fields
                 required_fields = ["P or S", "Quality"]
                 for field in required_fields:
                     idx = input_layer.fields().indexFromName(field)
@@ -323,7 +329,7 @@ class FaultBufferTool:
                     QMessageBox.critical(self.dlg, "Error", 
                         f"Required fields '{p_or_s_field}' and/or '{quality_field}' not found in input layer!")
                     return
-                QgsMessageLog.logMessage("Verify required fields exist", "FaultBufferTool")
+                QgsMessageLog.logMessage("Verified required fields exist", "FaultBufferTool")
                 
                 # Create output layer
                 buffer_provider = buffer_layer.dataProvider()
@@ -362,7 +368,8 @@ class FaultBufferTool:
                         buffer_geom = geometry.buffer(distance, 5)
                         
                         # Create reverse transform for going back to original CRS
-                        reverse_transform = QgsCoordinateTransform(
+                        
+                        QgsCoordinateTransform(
                             utm_crs,  # From UTM
                             source_crs,  # Back to source CRS
                             QgsProject.instance()
@@ -386,7 +393,8 @@ class FaultBufferTool:
                     
                     buffer_provider.addFeature(buffer_feature)
                     
-                    QgsMessageLog.logMessage("Buffer created", "FaultBufferTool")
+                
+                QgsMessageLog.logMessage("Buffer created", "FaultBufferTool")
                     
                 # Write the layer to file
                 error = QgsVectorFileWriter.writeAsVectorFormat(
