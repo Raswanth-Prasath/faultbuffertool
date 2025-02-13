@@ -25,9 +25,8 @@ from qgis.PyQt.QtCore import QSettings, QTranslator, QCoreApplication, QVariant
 from qgis.PyQt.QtGui import QIcon
 from qgis.PyQt.QtWidgets import QAction, QMessageBox, QFileDialog, QPushButton
 
-
-
-from qgis.core import (QgsProject,
+from qgis.core import (
+    QgsProject,
     QgsVectorLayer,
     QgsField,
     QgsFeature,
@@ -37,11 +36,12 @@ from qgis.core import (QgsProject,
     QgsSymbol,
     QgsRendererCategory,
     QgsCategorizedSymbolRenderer,
-    
     QgsMessageLog,
     QgsCoordinateReferenceSystem,
     QgsCoordinateTransform,
-    QgsDistanceArea
+    QgsDistanceArea,
+    QgsPointXY,
+    QgsGeometry
 )
 from qgis.gui import QgsFileWidget
 
@@ -227,7 +227,131 @@ class FaultBufferTool:
             epsg = f"327{zone:02d}"  # Southern hemisphere
         
         return QgsCoordinateReferenceSystem(f"EPSG:{epsg}")
+    
+    def create_asymmetric_buffer(self, geometry, distance, dip_direction, segments=20):
+        """
+        Creates a smooth asymmetric buffer along a fault line with proper geological appearance.
+        
+        This method uses a sophisticated approach that:
+        1. Densifies the input geometry to ensure smooth curves
+        2. Creates parallel offset lines with proper spacing
+        3. Handles the dip direction to create geologically accurate buffers
+        
+        Args:
+            geometry: The input fault line geometry
+            distance: Base buffer distance
+            dip_direction: Direction of dip (N/S/E/W)
+            segments: Number of segments for smoothing curves
+            
+        Returns:
+            QgsGeometry: A smooth, asymmetric buffer that follows geological principles
+        """
+        try:
+            # First, densify the geometry to ensure smooth curves
+            # We'll add points every 1/10th of the buffer distance for natural appearance
+            interval = distance / 10
+            densified = geometry.densifyByDistance(interval)
+            
+            # Calculate our asymmetric distances
+            larger_dist = (distance * 4) / 5   # 80% on dip side
+            smaller_dist = distance / 5        # 20% on opposite side
+            
+            # Get the densified line as points
+            if densified.isMultipart():
+                lines = densified.asMultiPolyline()
+            else:
+                lines = [densified.asPolyline()]
+                
+            # Process each line segment to create smooth buffer
+            buffer_parts = []
+            for line in lines:
+                points_dip = []    # Points on dip side
+                points_opp = []    # Points on opposite side
+                
+                for i in range(len(line) - 1):
+                    # Get current and next point
+                    p1 = line[i]
+                    p2 = line[i + 1]
+                    
+                    # Calculate segment direction vector
+                    dx = p2.x() - p1.x()
+                    dy = p2.y() - p1.y()
+                    
+                    # Normalize the direction vector
+                    length = (dx * dx + dy * dy) ** 0.5
+                    if length > 0:
+                        dx /= length
+                        dy /= length
+                        
+                        # Calculate perpendicular vector
+                        perpx = -dy
+                        perpy = dx
+                        
+                        # Adjust based on dip direction
+                        if dip_direction.upper() == 'N':
+                            if perpy > 0:
+                                d1, d2 = larger_dist, smaller_dist
+                            else:
+                                d1, d2 = smaller_dist, larger_dist
+                        elif dip_direction.upper() == 'S':
+                            if perpy > 0:
+                                d1, d2 = smaller_dist, larger_dist
+                            else:
+                                d1, d2 = larger_dist, smaller_dist
+                        elif dip_direction.upper() == 'E':
+                            if perpx > 0:
+                                d1, d2 = larger_dist, smaller_dist
+                            else:
+                                d1, d2 = smaller_dist, larger_dist
+                        else:  # West
+                            if perpx > 0:
+                                d1, d2 = smaller_dist, larger_dist
+                            else:
+                                d1, d2 = larger_dist, smaller_dist
+                        
+                        # Create offset points
+                        dip_point = QgsPointXY(
+                            p1.x() + perpx * d1,
+                            p1.y() + perpy * d1
+                        )
+                        opp_point = QgsPointXY(
+                            p1.x() - perpx * d2,
+                            p1.y() - perpy * d2
+                        )
+                        
+                        points_dip.append(dip_point)
+                        points_opp.insert(0, opp_point)  # Insert at start to maintain order
+                
+                # Add final points if needed
+                if points_dip:
+                    last_dip = QgsPointXY(
+                        line[-1].x() + perpx * d1,
+                        line[-1].y() + perpy * d1
+                    )
+                    last_opp = QgsPointXY(
+                        line[-1].x() - perpx * d2,
+                        line[-1].y() - perpy * d2
+                    )
+                    points_dip.append(last_dip)
+                    points_opp.insert(0, last_opp)
+                
+                # Combine points to create a closed ring
+                all_points = points_dip + points_opp + [points_dip[0]]
+                buffer_parts.append(all_points)
+            
+            # Create final buffer geometry
+            buffer_geom = QgsGeometry.fromPolygonXY(buffer_parts)
+            
+            # Apply final smoothing
+            final_buffer = buffer_geom.buffer(distance/20, segments)
+            
+            return final_buffer
+            
+        except Exception as e:
+            QgsMessageLog.logMessage(f"Error creating asymmetric buffer: {str(e)}", "FaultBufferTool")
+            return None
 
+    
     def run(self):
         """Run method that performs all the real work"""
         
@@ -236,6 +360,9 @@ class FaultBufferTool:
         if self.first_start == True:
             self.first_start = False
             self.dlg = FaultBufferToolDialog()
+        
+        # Ensure one option is always selected
+        self.dlg.symmetricRadioButton.setChecked(True)
             
         self.dlg.setupUi(self.dlg)
     
@@ -270,6 +397,9 @@ class FaultBufferTool:
                 if not output_path.endswith('.shp'):
                     output_path += '.shp'
                 
+                # Get the buffer type from radio buttons
+                is_asymmetric = self.dlg.asymmetricRadioButton.isChecked()
+    
                 # Get and check the layer's CRS
                 source_crs = input_layer.crs()
                                
@@ -348,6 +478,8 @@ class FaultBufferTool:
                 for feature in input_layer.getFeatures():
                     # Get P/S classification and quality using updated field names
                     p_or_s = feature[p_or_s_field].strip().upper()
+                    dip_direction = feature['Dip_direct'].strip().upper()
+                    
                     try:
                         quality = int(feature[quality_field])
                     except (ValueError, TypeError):
@@ -357,7 +489,7 @@ class FaultBufferTool:
                     distance = self.buffer_distances.get((p_or_s, quality), 0)
                     if distance <= 0:
                         continue
-                        
+                    
                     # Create buffer geometry
                     geometry = feature.geometry()
                     if transform:
@@ -367,19 +499,34 @@ class FaultBufferTool:
                         # Create buffer (distance is now in meters)
                         buffer_geom = geometry.buffer(distance, 5)
                         
-                        # Create reverse transform for going back to original CRS
-                        
+                        # Create reverse transform for going back to original CRS                      
                         QgsCoordinateTransform(
                             utm_crs,  # From UTM
                             source_crs,  # Back to source CRS
                             QgsProject.instance()
                         )
                         
+                        # Create reverse transform for going back to original CRS
+                        reverse_transform = QgsCoordinateTransform(
+                            buffer_layer.crs(),  # From buffer layer CRS (UTM)
+                            source_crs,          # Back to source CRS
+                            QgsProject.instance()
+                        )
+                        
                         # Transform back to original CRS
                         buffer_geom.transform(reverse_transform)
+                    
+                    # Get the segment count from the spin box
+                    segments = self.dlg.segmentSpinBox.value()
+
+                    # Create asymmetric buffer if needed
+                    if self.dlg.asymmetricRadioButton.isChecked():
+                        # Create two buffers and merge them
+                        buffer_geom = self.create_asymmetric_buffer(geometry, distance, dip_direction, segments)
+                        
                     else:
                         # If no transform needed, just create the buffer
-                        buffer_geom = geometry.buffer(distance, 5)
+                        buffer_geom = geometry.buffer(distance, segments)
                         
                     # Create new feature with buffer
                     buffer_feature = QgsFeature(buffer_layer.fields())
