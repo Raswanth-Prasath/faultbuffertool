@@ -245,14 +245,14 @@ class FaultBufferTool:
             QgsGeometry: An asymmetric buffer created using QGIS's buffer function
         """
         try:
-            from qgis import processing
             from qgis.core import QgsFeature, QgsGeometry, QgsVectorLayer, QgsWkbTypes
 
             # Log initial parameters
             QgsMessageLog.logMessage(f"Starting asymmetric buffer creation: distance={distance}, dip={dip_direction}", "FaultBufferTool")
 
-            # Calculate translation distance
-            translation_dist = distance * 0.3
+            #Buffer ratio
+            buffer_ratio = 1/4
+            translation_dist = distance * ((1-buffer_ratio)/(1+buffer_ratio))
             
             # Calculate translation offsets
             if dip_direction.upper() == 'N':
@@ -324,110 +324,7 @@ class FaultBufferTool:
             QgsMessageLog.logMessage(f"Error in create_asymmetric_buffer: {str(e)}", "FaultBufferTool")
             import traceback
             QgsMessageLog.logMessage(f"Traceback: {traceback.format_exc()}", "FaultBufferTool")
-            return None   
-        #     # First, densify the geometry to ensure smooth curves
-        #     interval = distance / 10 
-        #     densified = geometry.densifyByDistance(interval)
-            
-        #     # Calculate our asymmetric distances
-        #     larger_dist = (distance * 4) / 5   # 4/5 on dip side
-        #     smaller_dist = distance / 5        # 1/5 on opposite side
-            
-        #     # Get the densified line as points
-        #     if densified.isMultipart():
-        #         lines = densified.asMultiPolyline()
-        #     else:
-        #         lines = [densified.asPolyline()]
-                
-        #     # Process each line segment to create smooth buffer
-        #     buffer_parts = []
-        #     for line in lines:
-        #         points_dip = []    # Points on dip side
-        #         points_opp = []    # Points on opposite side
-                
-        #         for i in range(len(line) - 1):
-        #             # Get current and next point
-        #             p1 = line[i]
-        #             p2 = line[i + 1]
-                    
-        #             # Calculate segment direction vector
-        #             dx = p2.x() - p1.x()
-        #             dy = p2.y() - p1.y()
-                    
-        #             # Normalize the direction vector
-        #             length = (dx * dx + dy * dy) ** 0.5
-        #             if length > 0:
-        #                 dx /= length
-        #                 dy /= length
-                        
-        #                 # Calculate perpendicular vector
-        #                 perpx = -dy
-        #                 perpy = dx
-                        
-        #                 # Adjust based on dip direction to create geological appearance
-        #                 if dip_direction.upper() == 'N':
-        #                     if perpy > 0:
-        #                         d1, d2 = larger_dist, smaller_dist
-        #                     else:
-        #                         d1, d2 = smaller_dist, larger_dist
-        #                 elif dip_direction.upper() == 'S':
-        #                     if perpy > 0:
-        #                         d1, d2 = smaller_dist, larger_dist
-        #                     else:
-        #                         d1, d2 = larger_dist, smaller_dist
-        #                 elif dip_direction.upper() == 'E':
-        #                     if perpx > 0:
-        #                         d1, d2 = larger_dist, smaller_dist
-        #                     else:
-        #                         d1, d2 = smaller_dist, larger_dist
-        #                 else:  # West
-        #                     if perpx > 0:
-        #                         d1, d2 = smaller_dist, larger_dist
-        #                     else:
-        #                         d1, d2 = larger_dist, smaller_dist
-                        
-        #                 # Create offset points for dip and opposite sides
-        #                 dip_point = QgsPointXY(
-        #                     p1.x() + perpx * d1,
-        #                     p1.y() + perpy * d1
-        #                 )
-        #                 opp_point = QgsPointXY(
-        #                     p1.x() - perpx * d2,
-        #                     p1.y() - perpy * d2
-        #                 )
-                        
-        #                 points_dip.append(dip_point)
-        #                 points_opp.insert(0, opp_point)  # Insert at start to maintain order
-                
-        #         # Add final points to close the buffer
-        #         if points_dip:
-        #             last_dip = QgsPointXY(
-        #                 line[-1].x() + perpx * d1,
-        #                 line[-1].y() + perpy * d1
-        #             )
-        #             last_opp = QgsPointXY(
-        #                 line[-1].x() - perpx * d2,
-        #                 line[-1].y() - perpy * d2
-        #             )
-        #             points_dip.append(last_dip)
-        #             points_opp.insert(0, last_opp)
-                
-        #         # Combine points to create a closed polygon
-        #         all_points = points_dip + points_opp + [points_dip[0]]
-        #         buffer_parts.append(all_points)
-            
-        #     # Create final buffer geometry
-        #     buffer_geom = QgsGeometry.fromPolygonXY(buffer_parts)
-            
-        #     # Apply final smoothing
-        #     final_buffer = buffer_geom.buffer(distance/20, segments)
-            
-        #     return final_buffer
-            
-        # except Exception as e:
-        #     QgsMessageLog.logMessage(f"Error creating asymmetric buffer: {str(e)}", "FaultBufferTool")
-        #     return None
-
+            return None
     
     def run(self):
         """Run method that performs all the real work"""
@@ -513,7 +410,7 @@ class FaultBufferTool:
                 for field in required_fields:
                     idx = input_layer.fields().indexFromName(field)
                     QgsMessageLog.logMessage(f"Checking field '{field}': index = {idx}", "FaultBufferTool")
-    
+   
                 # Verify required fields exist
                 for field in required_fields:
                     if input_layer.fields().indexFromName(field) == -1:
@@ -636,27 +533,7 @@ class FaultBufferTool:
                 )
                 QgsMessageLog.logMessage("file created", "FaultBufferTool")
                 
-                # Copy symbology from input layer
-                renderer = input_layer.renderer()
-                if isinstance(renderer, QgsCategorizedSymbolRenderer):
-                    # Create new renderer for buffer layer
-                    categories = []
-                    for category in renderer.categories():
-                        symbol = category.symbol().clone()
-                        # Make the symbol semi-transparent for buffer
-                        symbol.setOpacity(0.5)
-                        categories.append(QgsRendererCategory(
-                            category.value(),
-                            symbol,
-                            category.label()
-                        ))
-                    
-                    new_renderer = QgsCategorizedSymbolRenderer(
-                        "P or S",  # Field to categorize by
-                        categories
-                    )
-                    buffer_layer.setRenderer(new_renderer)
-
+            
                 # Save the buffer layer
                 options = QgsVectorFileWriter.SaveVectorOptions()
                 options.driverName = "ESRI Shapefile"
@@ -673,9 +550,34 @@ class FaultBufferTool:
                     return
 
                 # Add the new layer to the map
-                buffer_layer = QgsVectorLayer(output_path, "Buffers", "ogr")
+                output_name = os.path.splitext(os.path.basename(output_path))[0]
+                buffer_layer = QgsVectorLayer(output_path, output_name, "ogr")
                 if buffer_layer.isValid():
-                    QgsProject.instance().addMapLayer(buffer_layer)
+                    # Set opacity for the buffer layer
+                    renderer = buffer_layer.renderer()
+                    if isinstance(renderer, QgsCategorizedSymbolRenderer):
+                        for category in renderer.categories():
+                            symbol = category.symbol()
+                            symbol.setOpacity(0.5)
+                    else:
+                        # If not categorized, set opacity for single symbol
+                        symbol = renderer.symbol()
+                        if symbol:
+                            symbol.setOpacity(0.5)
+
+                    # Get the layer tree and input layer's node
+                    root = QgsProject.instance().layerTreeRoot()
+                    input_node = root.findLayer(input_layer.id())
+                    
+                    # Insert buffer layer below input layer
+                    if input_node:
+                        QgsProject.instance().addMapLayer(buffer_layer, False)  # False = don't add to legend
+                        buffer_node = root.insertLayer(root.children().index(input_node) + 1, buffer_layer)
+                    else:
+                        # Fallback: just add the layer normally
+                        QgsProject.instance().addMapLayer(buffer_layer)
+
+                    buffer_layer.triggerRepaint()
                     QMessageBox.information(self.dlg, "Success", 
                         f"Buffer created successfully with symbology!")
                 else:
