@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>400</width>
-    <height>301</height>
+    <width>413</width>
+    <height>604</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -17,7 +17,7 @@
    <property name="geometry">
     <rect>
      <x>40</x>
-     <y>240</y>
+     <y>520</y>
      <width>341</width>
      <height>32</height>
     </rect>
@@ -94,39 +94,255 @@
    <property name="geometry">
     <rect>
      <x>30</x>
-     <y>120</y>
+     <y>400</y>
      <width>231</width>
-     <height>80</height>
+     <height>111</height>
     </rect>
    </property>
-   <property name="title">
-    <string>Buffer Type</string>
+   <property name="toolTip">
+    <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p align=&quot;justify&quot;&gt;The fault is a strike-slip vertically dipping fault with a buffer that is symmetric around the fault. A normal fault has an asymmetric buffer around the fault with a footwall to hanging wall ratio of 1:4.  A reverse fault has an asymmetric buffer with a footwall to hanging wall ratio of 1:2.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
    </property>
-   <widget class="QRadioButton" name="symmetricRadioButton">
+   <property name="title">
+    <string>Fault Type</string>
+   </property>
+   <widget class="QWidget" name="">
     <property name="geometry">
      <rect>
       <x>30</x>
       <y>20</y>
-      <width>131</width>
-      <height>20</height>
+      <width>162</width>
+      <height>76</height>
      </rect>
     </property>
-    <property name="text">
-     <string>Symmetric buffer</string>
-    </property>
+    <layout class="QVBoxLayout" name="verticalLayout_2">
+     <item>
+      <widget class="QRadioButton" name="StrikeslipFaultRadioButton">
+       <property name="text">
+        <string>Strike-slip (default) 1:1</string>
+       </property>
+       <property name="checked">
+        <bool>true</bool>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QRadioButton" name="NormalFaultRadioButton">
+       <property name="text">
+        <string>Normal: 1:4</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QRadioButton" name="ReverseFaultRadioButton">
+       <property name="text">
+        <string>Reverse: 1:2</string>
+       </property>
+      </widget>
+     </item>
+    </layout>
    </widget>
-   <widget class="QRadioButton" name="asymmetricRadioButton">
+  </widget>
+  <widget class="QGroupBox" name="groupBox_2">
+   <property name="geometry">
+    <rect>
+     <x>30</x>
+     <y>120</y>
+     <width>351</width>
+     <height>271</height>
+    </rect>
+   </property>
+   <property name="title">
+    <string>Error Approach</string>
+   </property>
+   <widget class="QRadioButton" name="generalUncertaintyRadioButton">
     <property name="geometry">
      <rect>
-      <x>30</x>
-      <y>50</y>
-      <width>191</width>
+      <x>10</x>
+      <y>20</y>
+      <width>231</width>
       <height>20</height>
      </rect>
     </property>
-    <property name="text">
-     <string>Asymmetric buffer (1:4 ratio)</string>
+    <property name="toolTip">
+     <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;This general uncertainty option ignores the fault confidence and ranking and is best used early in the fault process when the fault confidence and ranking are very likely to change &lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
     </property>
+    <property name="text">
+     <string>General uncertainty (ignore ranking)</string>
+    </property>
+   </widget>
+   <widget class="QRadioButton" name="uncertaintyWithRankingRadioButton">
+    <property name="geometry">
+     <rect>
+      <x>10</x>
+      <y>40</y>
+      <width>331</width>
+      <height>20</height>
+     </rect>
+    </property>
+    <property name="toolTip">
+     <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p align=&quot;justify&quot;&gt;These can be used to select the fault location uncertainty when mappers are reasonably confident about these fault attributes. &lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+    </property>
+    <property name="statusTip">
+     <string/>
+    </property>
+    <property name="text">
+     <string>Uncertainty with ranking (Select 1-3 rankings to use)</string>
+    </property>
+    <property name="checked">
+     <bool>true</bool>
+    </property>
+   </widget>
+   <widget class="QRadioButton" name="geologicJudgementRadioButton">
+    <property name="geometry">
+     <rect>
+      <x>10</x>
+      <y>210</y>
+      <width>151</width>
+      <height>20</height>
+     </rect>
+    </property>
+    <property name="toolTip">
+     <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p align=&quot;justify&quot;&gt;Apply this single uncertainty value to all mapped fault traces when the above results are inconsistent with geological judgment, perhaps reflecting the type and quality of data, the climate and/or characteristics of the fault.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt; </string>
+    </property>
+    <property name="text">
+     <string>Geologic judgement</string>
+    </property>
+   </widget>
+   <widget class="QLineEdit" name="geologicJudgementRadioButton_2">
+    <property name="geometry">
+     <rect>
+      <x>50</x>
+      <y>230</y>
+      <width>113</width>
+      <height>30</height>
+     </rect>
+    </property>
+   </widget>
+   <widget class="QLabel" name="label">
+    <property name="geometry">
+     <rect>
+      <x>10</x>
+      <y>150</y>
+      <width>221</width>
+      <height>16</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string/>
+    </property>
+   </widget>
+   <widget class="QGroupBox" name="groupBox_3">
+    <property name="geometry">
+     <rect>
+      <x>10</x>
+      <y>140</y>
+      <width>331</width>
+      <height>61</height>
+     </rect>
+    </property>
+    <property name="toolTip">
+     <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p align=&quot;justify&quot;&gt;A lower percentile as appropriate with more confidence in the fault position. For example, a mapper may be more confident in the mapped fault with more data but we recommend not over-rewarding additional information.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt; </string>
+    </property>
+    <property name="styleSheet">
+     <string notr="true">QGroupBox { background-color: #f0f0f0; border: 1px solid #d0d0d0; }</string>
+    </property>
+    <property name="title">
+     <string>Fault confidence interval (Select one)</string>
+    </property>
+    <widget class="QWidget" name="">
+     <property name="geometry">
+      <rect>
+       <x>30</x>
+       <y>30</y>
+       <width>172</width>
+       <height>22</height>
+      </rect>
+     </property>
+     <layout class="QHBoxLayout" name="horizontalLayout">
+      <item>
+       <widget class="QRadioButton" name="percentile50RadioButton">
+        <property name="text">
+         <string>50th</string>
+        </property>
+        <property name="checked">
+         <bool>true</bool>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QRadioButton" name="percentile84RadioButton">
+        <property name="text">
+         <string>84th</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QRadioButton" name="percentile97RadioButton">
+        <property name="text">
+         <string>97th</string>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </widget>
+   <widget class="QLabel" name="label_2">
+    <property name="geometry">
+     <rect>
+      <x>170</x>
+      <y>230</y>
+      <width>55</width>
+      <height>21</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>meters</string>
+    </property>
+   </widget>
+   <widget class="QWidget" name="">
+    <property name="geometry">
+     <rect>
+      <x>50</x>
+      <y>60</y>
+      <width>151</width>
+      <height>76</height>
+     </rect>
+    </property>
+    <layout class="QVBoxLayout" name="verticalLayout">
+     <item>
+      <widget class="QCheckBox" name="confidenceCheckBox">
+       <property name="toolTip">
+        <string>This indicates the certainty in the fault’s existence and position.</string>
+       </property>
+       <property name="text">
+        <string>Confidence</string>
+       </property>
+       <property name="checked">
+        <bool>true</bool>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QCheckBox" name="primarySecondaryCheckBox">
+       <property name="toolTip">
+        <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p align=&quot;justify&quot;&gt;The primary fault accommodates the larger coseismic displacements. The secondary faults are less continuous, can be synthetic or antithetic to the primary fault or can be fractures without displacement. &lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+       </property>
+       <property name="text">
+        <string>Primary or secondary</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QCheckBox" name="simpleComplexCheckBox">
+       <property name="toolTip">
+        <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p align=&quot;justify&quot;&gt;Simple faults are relatively straight and have a narrow fault zone. Complex faults form a step-over, bend, overlap, are short in length, or are located upslope or basin-ward of the range front fault.  &lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+       </property>
+       <property name="text">
+        <string>Simple or complex</string>
+       </property>
+      </widget>
+     </item>
+    </layout>
    </widget>
   </widget>
  </widget>
@@ -151,8 +367,8 @@
    <slot>accept()</slot>
    <hints>
     <hint type="sourcelabel">
-     <x>20</x>
-     <y>20</y>
+     <x>70</x>
+     <y>550</y>
     </hint>
     <hint type="destinationlabel">
      <x>20</x>
@@ -167,8 +383,8 @@
    <slot>reject()</slot>
    <hints>
     <hint type="sourcelabel">
-     <x>20</x>
-     <y>20</y>
+     <x>70</x>
+     <y>550</y>
     </hint>
     <hint type="destinationlabel">
      <x>20</x>

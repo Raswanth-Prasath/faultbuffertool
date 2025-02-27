@@ -98,6 +98,87 @@ class FaultBufferTool:
             ('S', 3): 70,   # Secondary, Quality 3
             ('S', 4): 20    # Secondary, Quality 4
         }
+        
+        # Uncertainty table for different criteria
+        self.uncertainty_table = {
+            # General uncertainty
+            'general': {
+                '50th': 20,
+                '84th': 70, 
+                '97th': 100
+            },
+            # Fault confidence only
+            'confidence': {
+                'strong': {'50th': 10, '84th': 30, '97th': 40},
+                'distinct': {'50th': 10, '84th': 30, '97th': 40},
+                'weak': {'50th': 20, '84th': 20, '97th': 60},
+                'uncertain': {'50th': 50, '84th': 130, '97th': 190}
+            },
+            # Primary vs Secondary only
+            'primary_secondary': {
+                'primary': {'50th': 20, '84th': 30, '97th': 40},
+                'secondary': {'50th': 40, '84th': 60, '97th': 80}
+            },
+            # Simple vs Complex only
+            'simple_complex': {
+                'simple': {'50th': 20, '84th': 30, '97th': 40},
+                'complex': {'50th': 40, '84th': 60, '97th': 80}
+            },
+            # Confidence & Primary/Secondary
+            'conf_prim_sec': {
+                'strong_primary': {'50th': 10, '84th': 30, '97th': 40},
+                'distinct_primary': {'50th': 10, '84th': 30, '97th': 40},
+                'weak_primary': {'50th': 30, '84th': 50, '97th': 50},
+                'uncertain_primary': {'50th': 50, '84th': 120, '97th': 170},
+                'strong_secondary': {'50th': 10, '84th': 40, '97th': 60},
+                'distinct_secondary': {'50th': 20, '84th': 50, '97th': 80},
+                'weak_secondary': {'50th': 60, '84th': 60, '97th': 70},
+                'uncertain_secondary': {'50th': 70, '84th': 200, '97th': 250}
+            },
+            # Confidence & Simple/Complex
+            'conf_simple_complex': {
+                'strong_simple': {'50th': 10, '84th': 30, '97th': 40},
+                'distinct_simple': {'50th': 10, '84th': 30, '97th': 40},
+                'weak_simple': {'50th': 30, '84th': 50, '97th': 50},
+                'uncertain_simple': {'50th': 50, '84th': 120, '97th': 170},
+                'strong_complex': {'50th': 10, '84th': 40, '97th': 60},
+                'distinct_complex': {'50th': 20, '84th': 50, '97th': 80},
+                'weak_complex': {'50th': 60, '84th': 60, '97th': 70},
+                'uncertain_complex': {'50th': 70, '84th': 200, '97th': 250}
+            },
+            # Primary/Secondary & Simple/Complex
+            'prim_sec_simple_complex': {
+                'primary_simple': {'50th': 20, '84th': 60, '97th': 80},
+                'primary_complex': {'50th': 20, '84th': 60, '97th': 80},
+                'secondary_simple': {'50th': 40, '84th': 80, '97th': 100},
+                'secondary_complex': {'50th': 80, '84th': 100, '97th': 80}
+            },
+            # All three criteria
+            'all_criteria': {
+                'strong_primary_simple': {'50th': 10, '84th': 30, '97th': 40},
+                'distinct_primary_simple': {'50th': 10, '84th': 30, '97th': 40},
+                'weak_primary_simple': {'50th': 30, '84th': 50, '97th': 50},
+                'uncertain_primary_simple': {'50th': 50, '84th': 120, '97th': 170},
+                'strong_secondary_simple': {'50th': 10, '84th': 40, '97th': 60},
+                'distinct_secondary_simple': {'50th': 20, '84th': 50, '97th': 80},
+                'weak_secondary_simple': {'50th': 60, '84th': 60, '97th': 70},
+                'uncertain_secondary_simple': {'50th': 70, '84th': 200, '97th': 250},
+                'strong_primary_complex': {'50th': 20, '84th': 40, '97th': 50},
+                'distinct_primary_complex': {'50th': 20, '84th': 40, '97th': 50},
+                'weak_primary_complex': {'50th': 40, '84th': 60, '97th': 70},
+                'uncertain_primary_complex': {'50th': 70, '84th': 130, '97th': 200},
+                'strong_secondary_complex': {'50th': 30, '84th': 60, '97th': 70},
+                'distinct_secondary_complex': {'50th': 40, '84th': 60, '97th': 100},
+                'weak_secondary_complex': {'50th': 80, '84th': 90, '97th': 120},
+                'uncertain_secondary_complex': {'50th': 100, '84th': 250, '97th': 300}
+            },
+            # For unpredicted ruptures
+            'unpredicted': {
+                '50th': 300,
+                '84th': 1000,
+                '97th': 1700
+            }
+        }
 
     # noinspection PyMethodMayBeStatic
     def tr(self, message):
@@ -229,7 +310,7 @@ class FaultBufferTool:
         
         return QgsCoordinateReferenceSystem(f"EPSG:{epsg}")
     
-    def create_asymmetric_buffer(self, geometry, distance, dip_direction, input_crs, segments):
+    def create_asymmetric_buffer(self, geometry, distance, dip_direction, input_crs, segments, buffer_ratio):
         """
         Creates an asymmetric buffer by:
         1. Translating the fault line based on dip direction
@@ -237,9 +318,11 @@ class FaultBufferTool:
         
         Args:
             geometry: The input fault line geometry
-            distance: Base buffer distance
+            distance: Base buffer distance  
             dip_direction: Direction of dip (N/S/E/W)
+            input_crs: Input coordinate reference system
             segments: Number of segments for smoothing curves
+            buffer_ratio: Ratio of buffer on footwall/hanging wall sides (1/4 for normal, 1/2 for reverse)
             
         Returns:
             QgsGeometry: An asymmetric buffer created using QGIS's buffer function
@@ -248,25 +331,38 @@ class FaultBufferTool:
             from qgis.core import QgsFeature, QgsGeometry, QgsVectorLayer, QgsWkbTypes
 
             # Log initial parameters
-            QgsMessageLog.logMessage(f"Starting asymmetric buffer creation: distance={distance}, dip={dip_direction}", "FaultBufferTool")
+            QgsMessageLog.logMessage(f"Starting asymmetric buffer creation: distance={distance}, dip={dip_direction}, ratio={buffer_ratio}", "FaultBufferTool")
 
-            #Buffer ratio
-            buffer_ratio = 1/4
+            # Calculate translation based on buffer ratio
             translation_dist = distance * ((1-buffer_ratio)/(1+buffer_ratio))
             
-            # Calculate translation offsets
+            # Calculate diagonal distance for NE, NW, SE, SW directions
+            diagonal_dist = translation_dist / (2 ** 0.5)
+            
+            # Calculate translation offsets based on dip direction
             if dip_direction.upper() == 'N':
                 dx, dy = 0, translation_dist
             elif dip_direction.upper() == 'S':
                 dx, dy = 0, -translation_dist
             elif dip_direction.upper() == 'E':
                 dx, dy = translation_dist, 0
-            else:  # West
+            elif dip_direction.upper() == 'W':
                 dx, dy = -translation_dist, 0
+            elif dip_direction.upper() == 'NE':
+                dx, dy = diagonal_dist, diagonal_dist
+            elif dip_direction.upper() == 'NW':
+                dx, dy = -diagonal_dist, translation_dist
+            elif dip_direction.upper() == 'SE':
+                dx, dy = diagonal_dist, -diagonal_dist
+            elif dip_direction.upper() == 'SW':
+                dx, dy = -diagonal_dist, -diagonal_dist
+            else:
+                QgsMessageLog.logMessage(f"Invalid dip direction: {dip_direction}", "FaultBufferTool")
+                return None
 
             QgsMessageLog.logMessage(f"Translation values: dx={dx}, dy={dy}", "FaultBufferTool")
 
-            # Create temporary layer 
+            # Create temporary layer
             temp_layer = QgsVectorLayer(f"LineString?crs={input_crs.authid()}", "temp", "memory")
             if not temp_layer.isValid():
                 QgsMessageLog.logMessage("Failed to create temporary layer", "FaultBufferTool")
@@ -279,7 +375,7 @@ class FaultBufferTool:
             if not temp_provider.addFeatures([temp_feat]):
                 QgsMessageLog.logMessage("Failed to add feature to temporary layer", "FaultBufferTool")
                 return None
-
+            
             # Run translate algorithm
             translate_params = {
                 'INPUT': temp_layer,
@@ -296,10 +392,19 @@ class FaultBufferTool:
             if not translated_result or 'OUTPUT' not in translated_result:
                 QgsMessageLog.logMessage("Translation algorithm failed", "FaultBufferTool")
                 return None
-
+            
             # Get translated geometry
             translated_layer = translated_result['OUTPUT']
-            translated_geom = None
+            
+            # Set a meaningful name for the translated layer
+            translated_layer.setName("Translated Fault Line")
+            
+            # Add translated layer to the project   
+            QgsProject.instance().addMapLayer(translated_layer)
+            translated_layer.triggerRepaint()
+            
+            # Store translated geometry for buffer creation
+            translated_geom = None 
             for feat in translated_layer.getFeatures():
                 translated_geom = feat.geometry()
                 break
@@ -307,7 +412,7 @@ class FaultBufferTool:
             if not translated_geom:
                 QgsMessageLog.logMessage("Failed to get translated geometry", "FaultBufferTool")
                 return None
-
+             
             QgsMessageLog.logMessage("Creating buffer...", "FaultBufferTool")
             
             # Create buffer
@@ -325,6 +430,90 @@ class FaultBufferTool:
             import traceback
             QgsMessageLog.logMessage(f"Traceback: {traceback.format_exc()}", "FaultBufferTool")
             return None
+        
+    def get_uncertainty_distance(self, feature):
+        """
+        Get buffer distance based on uncertainty rankings selected in the UI
+        """
+        # Default to using the buffer_distances lookup
+        if not self.dlg.uncertaintyWithRankingRadioButton.isChecked():
+            p_or_s = feature["P or S"].strip().upper()
+            quality = int(feature["Quality"])
+            return self.buffer_distances.get((p_or_s, quality), 0)
+        
+        # Get selected confidence interval
+        percentile = '50th'  # Default
+        if self.dlg.percentile50RadioButton.isChecked():
+            percentile = '50th'
+        elif self.dlg.percentile84RadioButton.isChecked():
+            percentile = '84th'
+        elif self.dlg.percentile97RadioButton.isChecked():
+            percentile = '97th'
+        
+        # General uncertainty (ignore rankings)
+        if self.dlg.generalUncertaintyRadioButton.isChecked():
+            return self.uncertainty_table['general'][percentile]
+        
+        # Get feature attributes
+        confidence = feature['Quality']
+        # Map Quality to confidence level text
+        confidence_text = 'uncertain'
+        if confidence == 4:
+            confidence_text = 'strong'
+        elif confidence == 3:
+            confidence_text = 'distinct'
+        elif confidence == 2:
+            confidence_text = 'weak'
+        
+        p_or_s = feature["P or S"].strip().upper()
+        primary_secondary = 'primary' if p_or_s == 'P' else 'secondary'
+        
+        # Get simple vs complex value from SimpComp field
+        simple_complex = 'simple'  # Default
+        if 'SimpComp' in [f.name() for f in feature.fields()]:
+            simp_comp = feature['SimpComp'].strip().upper()
+            if simp_comp == 'C':
+                simple_complex = 'complex'
+        
+        # Determine which criteria are selected
+        conf_selected = self.dlg.confidenceCheckBox.isChecked()
+        prim_sec_selected = self.dlg.primarySecondaryCheckBox.isChecked()
+        simple_complex_selected = self.dlg.simpleComplexCheckBox.isChecked()
+        
+        # Use all three criteria
+        if conf_selected and prim_sec_selected and simple_complex_selected:
+            key = f"{confidence_text}_{primary_secondary}_{simple_complex}"
+            return self.uncertainty_table['all_criteria'].get(key, {}).get(percentile, 0)
+        
+        # Use confidence and primary/secondary
+        elif conf_selected and prim_sec_selected:
+            key = f"{confidence_text}_{primary_secondary}"
+            return self.uncertainty_table['conf_prim_sec'].get(key, {}).get(percentile, 0)
+        
+        # Use confidence and simple/complex
+        elif conf_selected and simple_complex_selected:
+            key = f"{confidence_text}_{simple_complex}"
+            return self.uncertainty_table['conf_simple_complex'].get(key, {}).get(percentile, 0)
+        
+        # Use primary/secondary and simple/complex
+        elif prim_sec_selected and simple_complex_selected:
+            key = f"{primary_secondary}_{simple_complex}"
+            return self.uncertainty_table['prim_sec_simple_complex'].get(key, {}).get(percentile, 0)
+        
+        # Use only confidence
+        elif conf_selected:
+            return self.uncertainty_table['confidence'].get(confidence_text, {}).get(percentile, 0)
+        
+        # Use only primary/secondary
+        elif prim_sec_selected:
+            return self.uncertainty_table['primary_secondary'].get(primary_secondary, {}).get(percentile, 0)
+        
+        # Use only simple/complex
+        elif simple_complex_selected:
+            return self.uncertainty_table['simple_complex'].get(simple_complex, {}).get(percentile, 0)
+        
+        # Fallback to general uncertainty
+        return self.uncertainty_table['general'][percentile]
     
     def run(self):
         """Run method that performs all the real work"""
@@ -336,7 +525,7 @@ class FaultBufferTool:
             self.dlg = FaultBufferToolDialog()
         
         # Ensure one option is always selected
-        self.dlg.symmetricRadioButton.setChecked(True)
+        # self.dlg.StrikeslipFaultRadioButton.setChecked(True)
             
         self.dlg.setupUi(self.dlg)
     
@@ -381,13 +570,12 @@ class FaultBufferTool:
                     
                     # Get the UTM zome for the layer's extent
                     center_point = input_layer.extent().center()
-                    utm_crs = self.get_utm_crs(center_point.x(), center_point.y())
-  
+                    utm_crs = self.get_utm_crs(center_point.x(), center_point.y()) # Get UTM CRS based on center point
 
-                    QgsMessageLog.logMessage(f"Selected UTM CRS: {utm_crs.description()}", "Buffer Tool")
+                    QgsMessageLog.logMessage(f"Selected UTM CRS: {utm_crs.description()}", "Buffer Tool") 
                     
                     # Create transform context
-                    transform = QgsCoordinateTransform(source_crs, utm_crs, QgsProject.instance())
+                    transform = QgsCoordinateTransform(source_crs, utm_crs, QgsProject.instance()) 
                     
                     # Create new layer in UTM projection
                     buffer_layer = QgsVectorLayer(f"Polygon?crs={utm_crs.authid()}", "buffers", "memory")
@@ -396,6 +584,7 @@ class FaultBufferTool:
                     QgsMessageLog.logMessage(f"Source CRS is projected: {source_crs.description()}", "Buffer Tool")
                     buffer_layer = QgsVectorLayer(f"Polygon?crs={source_crs.authid()}", "buffers", "memory")
                     transform = None
+                    utm_crs = source_crs  # No need to transform if already projected
                 
                 QgsMessageLog.logMessage(f"Input CRS: {source_crs.authid()}", "FaultBufferTool")
                 QgsMessageLog.logMessage(f"Buffer layer CRS: {buffer_layer.crs().authid()}", "FaultBufferTool")
@@ -448,6 +637,19 @@ class FaultBufferTool:
                 
                 # Process features             
                 for feature in input_layer.getFeatures():
+                    
+                    # Check if required fields exist
+                    if p_or_s_field not in available_fields or quality_field not in available_fields:
+                        QMessageBox.critical(self.dlg, "Error", 
+                            f"Required fields '{p_or_s_field}' and/or '{quality_field}' not found in input layer!")
+                        return
+                    
+                    # Check if SimpComp field exists when needed
+                    if self.dlg.uncertaintyWithRankingRadioButton.isChecked() and self.dlg.simpleComplexCheckBox.isChecked():
+                        if 'SimpComp' not in available_fields:
+                            QMessageBox.critical(self.dlg, "Error", 
+                                f"Required field 'SimpComp' not found in input layer for Simple/Complex ranking!")
+                            return
                     # Get P/S classification and quality using updated field names
                     p_or_s = feature[p_or_s_field].strip().upper()
                     dip_direction = feature['Dip_direct'].strip().upper()
@@ -458,7 +660,7 @@ class FaultBufferTool:
                         continue
                     
                     # Look up buffer distance
-                    distance = self.buffer_distances.get((p_or_s, quality), 0)
+                    distance = self.get_uncertainty_distance(feature)
                     if distance <= 0:
                         continue
                     
@@ -490,23 +692,41 @@ class FaultBufferTool:
                     
                     # Set number of segments for buffer
                     segments = 5  # Default value
+                    buffer_ratio = 1.0 # Default value for normal faults
+                    
 
-                    # Create asymmetric buffer if asymmetric is selected
-                    if self.dlg.asymmetricRadioButton.isChecked():
-                        # Create two buffers and merge them
-                        QgsMessageLog.logMessage(f"Creating asymmetric buffer for feature {feature.id()}", "FaultBufferTool")
-                        input_crs = input_layer.crs()  # Get CRS from input layer
-                        buffer_geom = self.create_asymmetric_buffer(
-                            geometry, 
-                            distance, 
-                            dip_direction,
-                            input_crs, 
-                            segments# Pass the CRS 
-                        )
-                        
-                    else:
-                        # If no transform needed, just create the buffer
+                    # Check which fault type is selected
+                    if self.dlg.StrikeslipFaultRadioButton.isChecked():
+                        # Symmetric buffer for strike-slip faults
                         buffer_geom = geometry.buffer(distance, segments)
+                    
+                    elif self.dlg.NormalFaultRadioButton.isChecked():
+                        # Asymmetric buffer with 1:4 ratio for normal faults
+                        buffer_ratio = 1/4
+                        QgsMessageLog.logMessage(f"Creating asymmetric buffer for feature {feature.id()}", "FaultBufferTool")
+                        utm_crs = input_layer.crs()  # Get CRS from input layer
+                        buffer_geom = self.create_asymmetric_buffer(
+                            geometry,
+                            distance,
+                            dip_direction,
+                            utm_crs,
+                            segments,
+                            buffer_ratio
+                        )
+                    
+                    elif self.dlg.ReverseFaultRadioButton.isChecked():
+                        # Asymmetric buffer with 1:2 ratio for reverse faults
+                        buffer_ratio = 1/2
+                        QgsMessageLog.logMessage(f"Creating asymmetric buffer for feature {feature.id()}", "FaultBufferTool")
+                        utm_crs = input_layer.crs()  # Get CRS from input layer
+                        buffer_geom = self.create_asymmetric_buffer(
+                            geometry,
+                            distance,
+                            dip_direction,
+                            utm_crs,
+                            segments,
+                            buffer_ratio
+                        )
                         
                     # Create new feature with buffer
                     buffer_feature = QgsFeature(buffer_layer.fields())
