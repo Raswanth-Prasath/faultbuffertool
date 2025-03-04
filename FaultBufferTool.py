@@ -427,15 +427,9 @@ class FaultBufferTool:
     def get_uncertainty_distance(self, feature):
         """
         Get buffer distance based on uncertainty rankings selected in the UI
+        Only uses fields corresponding to checked boxes
         """
-        # Default to using the buffer_distances lookup
-        if not self.dlg.uncertaintyWithRankingRadioButton.isChecked():
-            p_or_s = feature["P or S"].strip().upper()
-            quality = int(feature["Quality"])
-            return self.buffer_distances.get((p_or_s, quality), 0)
-        
         # Get selected confidence interval
-        percentile = '50th'  # Default
         if self.dlg.percentile50RadioButton.isChecked():
             percentile = '50th'
         elif self.dlg.percentile84RadioButton.isChecked():
@@ -447,23 +441,30 @@ class FaultBufferTool:
         if self.dlg.generalUncertaintyRadioButton.isChecked():
             return self.uncertainty_table['general'][percentile]
         
-        # Get feature attributes
-        confidence = feature['Quality']
-        # Map Quality to confidence level text
-        confidence_text = 'uncertain'
-        if confidence == 4:
-            confidence_text = 'strong'
-        elif confidence == 3:
-            confidence_text = 'distinct'
-        elif confidence == 2:
-            confidence_text = 'weak'
+        available_fields = [f.name() for f in feature.fields()]
         
-        p_or_s = feature["P or S"].strip().upper()
-        primary_secondary = 'primary' if p_or_s == 'P' else 'secondary'
+        # Initialize variables with defaults
+        confidence_text = 'uncertain'  # Default
+        primary_secondary = 'primary'  # Default
+        simple_complex = 'simple'      # Default
         
-        # Get simple vs complex value from SimpComp field
-        simple_complex = 'simple'  # Default
-        if 'SimpComp' in [f.name() for f in feature.fields()]:
+        # Only use the Quality field if Confidence checkbox is checked
+        if self.dlg.confidenceCheckBox.isChecked() and 'Quality' in available_fields:
+            confidence = feature['Quality']
+            if confidence == 4:
+                confidence_text = 'strong'
+            elif confidence == 3:
+                confidence_text = 'distinct'
+            elif confidence == 2:
+                confidence_text = 'weak'
+        
+        # Only use the P or S field if Primary/Secondary checkbox is checked
+        if self.dlg.primarySecondaryCheckBox.isChecked() and 'P or S' in available_fields:
+            p_or_s = feature["P or S"].strip().upper()
+            primary_secondary = 'primary' if p_or_s == 'P' else 'secondary'
+        
+        # Only use the SimpComp field if Simple/Complex checkbox is checked
+        if self.dlg.simpleComplexCheckBox.isChecked() and 'SimpComp' in available_fields:
             simp_comp = feature['SimpComp'].strip().upper()
             if simp_comp == 'C':
                 simple_complex = 'complex'
@@ -473,90 +474,76 @@ class FaultBufferTool:
         prim_sec_selected = self.dlg.primarySecondaryCheckBox.isChecked()
         simple_complex_selected = self.dlg.simpleComplexCheckBox.isChecked()
         
-        # Use all three criteria
+        # Now determine which uncertainty table to use based on selected criteria
+        
+        # Use all three criteria if all are checked
         if conf_selected and prim_sec_selected and simple_complex_selected:
             key = f"{confidence_text}_{primary_secondary}_{simple_complex}"
             return self.uncertainty_table['all_criteria'].get(key, {}).get(percentile, 0)
         
-        # Use confidence and primary/secondary
+        # Use confidence and primary/secondary if those two are checked
         elif conf_selected and prim_sec_selected:
             key = f"{confidence_text}_{primary_secondary}"
             return self.uncertainty_table['conf_prim_sec'].get(key, {}).get(percentile, 0)
         
-        # Use confidence and simple/complex
+        # Use confidence and simple/complex if those two are checked
         elif conf_selected and simple_complex_selected:
             key = f"{confidence_text}_{simple_complex}"
             return self.uncertainty_table['conf_simple_complex'].get(key, {}).get(percentile, 0)
         
-        # Use primary/secondary and simple/complex
+        # Use primary/secondary and simple/complex if those two are checked
         elif prim_sec_selected and simple_complex_selected:
             key = f"{primary_secondary}_{simple_complex}"
             return self.uncertainty_table['prim_sec_simple_complex'].get(key, {}).get(percentile, 0)
         
-        # Use only confidence
+        # Use only confidence if only that is checked
         elif conf_selected:
             return self.uncertainty_table['confidence'].get(confidence_text, {}).get(percentile, 0)
         
-        # Use only primary/secondary
+        # Use only primary/secondary if only that is checked
         elif prim_sec_selected:
             return self.uncertainty_table['primary_secondary'].get(primary_secondary, {}).get(percentile, 0)
         
-        # Use only simple/complex
+        # Use only simple/complex if only that is checked
         elif simple_complex_selected:
             return self.uncertainty_table['simple_complex'].get(simple_complex, {}).get(percentile, 0)
         
-        # Fallback to general uncertainty
+        # Fallback to general uncertainty if nothing is selected (shouldn't happen)
         return self.uncertainty_table['general'][percentile]
     
     def validate_required_fields(self, input_layer):
         """
-        Validates that the input layer has the required fields based on selected options
-        
-        Args:
-            input_layer: The input vector layer to check
-            
-        Returns:
-            tuple: (bool, str) - Success status and error message if any
+        Validates that the input layer has required fields based on selected options
+        Only checks for fields that correspond to checked boxes
         """
         available_fields = [f.name() for f in input_layer.fields()]
+        QgsMessageLog.logMessage(f"Available fields: {available_fields}", "FaultBufferTool")
         
-        # If using geologic judgment, no specific fields are required
+        # If using geologic judgment, no field checks needed except Dip_direct for non-strike-slip faults
         if self.dlg.geologicJudgementRadioButton.isChecked():
-            # We only need Dip_direct for non-strike-slip faults
             if not self.dlg.StrikeslipFaultRadioButton.isChecked():
                 if 'Dip_direct' not in available_fields:
                     return False, "Field 'Dip_direct' is required for normal/reverse faults with geologic judgment option"
             return True, ""
-            
+        
         # For uncertainty with ranking, check only selected ranking fields
         if self.dlg.uncertaintyWithRankingRadioButton.isChecked():
-            required_fields = []
+            # Only check for Quality field if Confidence checkbox is checked
+            if self.dlg.confidenceCheckBox.isChecked() and 'Quality' not in available_fields:
+                return False, "Required field 'Quality' not found in input layer for Confidence ranking!"
             
-            if self.dlg.confidenceCheckBox.isChecked():
-                required_fields.append(('Quality', 'Confidence ranking'))
-                
-            if self.dlg.primarySecondaryCheckBox.isChecked():
-                required_fields.append(('P or S', 'Primary/Secondary ranking'))
-                
-            if self.dlg.simpleComplexCheckBox.isChecked():
-                required_fields.append(('SimpComp', 'Simple/Complex ranking'))
+            # Only check for P or S field if Primary/Secondary checkbox is checked
+            if self.dlg.primarySecondaryCheckBox.isChecked() and 'P or S' not in available_fields:
+                return False, "Required field 'P or S' not found in input layer for Primary/Secondary ranking!"
             
-            # Check if any required field is missing
-            for field_name, ranking_type in required_fields:
-                if field_name not in available_fields:
-                    return False, f"Required field '{field_name}' not found in input layer for {ranking_type}!"
-        else:
-            # For legacy mode, check for P or S and Quality fields
-            if 'P or S' not in available_fields:
-                return False, "Required field 'P or S' not found in input layer!"
-            if 'Quality' not in available_fields:
-                return False, "Required field 'Quality' not found in input layer!"
-        
-        # Check for Dip_direct if needed
-        if not self.dlg.StrikeslipFaultRadioButton.isChecked():
-            if 'Dip_direct' not in available_fields:
+            # Only check for SimpComp field if Simple/Complex checkbox is checked
+            if self.dlg.simpleComplexCheckBox.isChecked() and 'SimpComp' not in available_fields:
+                return False, "Required field 'SimpComp' not found in input layer for Simple/Complex ranking!"
+            
+            # Check for Dip_direct if not using Strike-slip fault type
+            if not self.dlg.StrikeslipFaultRadioButton.isChecked() and 'Dip_direct' not in available_fields:
                 return False, "Field 'Dip_direct' is required for normal/reverse faults"
-                
+        
         return True, ""
     
     def create_buffer_for_feature(self, feature, buffer_layer, distance, input_layer, transform=None, 
@@ -697,6 +684,8 @@ class FaultBufferTool:
     
     def run(self):
         """Run method that performs all the real work"""
+        # Create the dialog
+        self.dlg = FaultBufferToolDialog()
         
         # Create the dialog with elements (after translation) and keep reference
         # Only create GUI ONCE in callback, so that it will only load when the plugin is started
@@ -711,9 +700,9 @@ class FaultBufferTool:
         self.dlg.mQgsFileWidget.setFilter("Shapefiles (*.shp)")
         self.dlg.mQgsFileWidget.setFilePath("")  # Clear any previous path
 
-
         # show the dialog
         self.dlg.show()
+        
         # Run the dialog event loop
         result = self.dlg.exec_()
         # See if OK was pressed
@@ -783,21 +772,22 @@ class FaultBufferTool:
                 if self.dlg.geologicJudgementRadioButton.isChecked():
                     # For geologic judgment, only need basic fields
                     buffer_provider.addAttributes([
-                        QgsField("original_id", QVariant.Int),
-                        QgsField("Buffer_Dist", QVariant.Double, "Double"),
-                        QgsField("Buffer_Type", QVariant.String, "String"),
-                        QgsField("Dip_Direction", QVariant.String, "String")
-                    ])
+                    QgsField("original_id", QVariant.Int, len=10),
+                    QgsField("Buffer_Dist", QVariant.Double, len=20, prec=2),
+                    QgsField("Buffer_Type", QVariant.String, len=50),
+                    QgsField("Dip_Direction", QVariant.String, len=10)
+                ])
+
                 else:
                     # For uncertainty with ranking, include all fields
                     buffer_provider.addAttributes([
-                        QgsField("original_id", QVariant.Int),
-                        QgsField("P or S", QVariant.String, "String"),
-                        QgsField("Quality", QVariant.Int, "Integer"),
-                        QgsField("Buffer_Dist", QVariant.Double, "Double"),
-                        QgsField("Dip_Direction", QVariant.String, "String"),
-                        QgsField("SimpComp", QVariant.String, "String")
-                    ])
+                    QgsField("original_id", QVariant.Int, len=0),
+                    QgsField("P or S", QVariant.String, len=1),
+                    QgsField("Quality", QVariant.Int, len=0),
+                    QgsField("Buffer_Dist", QVariant.Double, len=20, prec=2),
+                    QgsField("Dip_Direction", QVariant.String, len=10),
+                    QgsField("SimpComp", QVariant.String, len=1)
+                ])
                     
                 buffer_layer.updateFields()
                 QgsMessageLog.logMessage("Buffer layer fields initialized", "FaultBufferTool")
