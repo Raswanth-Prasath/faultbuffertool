@@ -593,7 +593,6 @@ class FaultBufferTool:
             
             # Get geometry and transform if needed
             geometry = feature.geometry()
-            original_geometry = QgsGeometry(geometry)  # Create a copy of the original geometry
             
             # Log CRS information before any transformation
             QgsMessageLog.logMessage(f"Input layer CRS: {input_layer.crs().authid()}", "FaultBufferTool")
