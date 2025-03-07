@@ -659,13 +659,29 @@ class FaultBufferTool:
                 buffer_feature.setAttribute("Dip_Direction", dip_direction)
                 
             if "P or S" in [f.name() for f in buffer_layer.fields()] and "P or S" in available_fields:
-                buffer_feature.setAttribute("P or S", feature["P or S"].strip().upper())
+                p_or_s_value = feature["P or S"]
+                if isinstance(p_or_s_value, str):
+                    buffer_feature.setAttribute("P or S", p_or_s_value.strip().upper())
+                elif p_or_s_value is None or (hasattr(p_or_s_value, 'isNull') and p_or_s_value.isNull()):
+                    buffer_feature.setAttribute("P or S", "")
+                else:
+                    buffer_feature.setAttribute("P or S", str(p_or_s_value).strip().upper())
                 
+            # Set specific attributes based on available fields
             if "Quality" in [f.name() for f in buffer_layer.fields()] and "Quality" in available_fields:
                 buffer_feature.setAttribute("Quality", feature["Quality"])
-                
+            elif "Quality" in [f.name() for f in buffer_layer.fields()]:
+                # For numeric fields, use None instead of NULL 
+                buffer_feature.setAttribute("Quality", None)  # Using None for numeric field
+
             if "SimpComp" in [f.name() for f in buffer_layer.fields()] and "SimpComp" in available_fields:
-                buffer_feature.setAttribute("SimpComp", feature["SimpComp"].strip().upper())
+                simp_comp_value = feature["SimpComp"]
+                if isinstance(simp_comp_value, str):
+                    buffer_feature.setAttribute("SimpComp", simp_comp_value.strip().upper())
+                elif simp_comp_value is None or (hasattr(simp_comp_value, 'isNull') and simp_comp_value.isNull()):
+                    buffer_feature.setAttribute("SimpComp", "")
+                else:
+                    buffer_feature.setAttribute("SimpComp", str(simp_comp_value).strip().upper())
                 
             if "Buffer_Type" in [f.name() for f in buffer_layer.fields()] and buffer_type:
                 buffer_feature.setAttribute("Buffer_Type", buffer_type)
@@ -824,29 +840,32 @@ class FaultBufferTool:
                 
                 else:
                     # Process features using uncertainty tables
+                    feature_processed = 0
                     for feature in input_layer.getFeatures():
-                        # Get quality/confidence value
                         try:
-                            if "Quality" in [f.name() for f in feature.fields()]:
-                                quality = int(feature["Quality"])
+                            # Get uncertainty distance
+                            distance = self.get_uncertainty_distance(feature)
+                            if distance <= 0:
+                                QgsMessageLog.logMessage(f"Skipping feature {feature.id()}: invalid distance", "FaultBufferTool")
+                                continue
+                            
+                            # Create buffer with common method
+                            success = self.create_buffer_for_feature(
+                                feature, buffer_layer, distance, input_layer,
+                                transform, utm_crs, source_crs
+                            )
+                            if success:
+                                feature_processed += 1
                             else:
-                                continue  # Skip feature if no Quality field
-                        except (ValueError, TypeError):
-                            continue  # Skip feature if Quality is not a valid integer
-                        
-                        # Look up buffer distance
-                        distance = self.get_uncertainty_distance(feature)
-                        if distance <= 0:
-                            continue  # Skip if distance is invalid
-                        
-                        # Create buffer with common method
-                        success = self.create_buffer_for_feature(
-                            feature, buffer_layer, distance, input_layer,
-                            transform, utm_crs, source_crs
-                        )
-                        if not success:
-                            QgsMessageLog.logMessage(f"Failed to create buffer for feature {feature.id()}", "FaultBufferTool")
-                
+                                QgsMessageLog.logMessage(f"Failed to create buffer for feature {feature.id()}", "FaultBufferTool")
+                        except Exception as e:
+                            QgsMessageLog.logMessage(f"Error processing feature {feature.id()}: {str(e)}", "FaultBufferTool")
+                            continue
+
+                    if feature_processed == 0:
+                        QMessageBox.critical(self.dlg, "Error", "No features could be processed. Check log for details.")
+                        return
+                                    
                 QgsMessageLog.logMessage("Buffer created", "FaultBufferTool")
                 
                 # Save the buffer layer
