@@ -12,7 +12,7 @@
         email                : raswanth@asu.edu
  ***************************************************************************/
 
-/***************************************************************************
+ ***************************************************************************
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
  *   it under the terms of the GNU General Public License as published by  *
@@ -888,17 +888,9 @@ class FaultBufferTool:
                 output_name = os.path.splitext(os.path.basename(output_path))[0]
                 buffer_layer = QgsVectorLayer(output_path, output_name, "ogr")
                 if buffer_layer.isValid():
-                    # Set opacity for the buffer layer
-                    renderer = buffer_layer.renderer()
-                    if isinstance(renderer, QgsCategorizedSymbolRenderer):
-                        for category in renderer.categories():
-                            symbol = category.symbol()
-                            symbol.setOpacity(0.5)
-                    else:
-                        # If not categorized, set opacity for single symbol
-                        symbol = renderer.symbol()
-                        if symbol:
-                            symbol.setOpacity(0.5)
+                    # Load the style from the QML file
+                    style_path = os.path.join(os.path.dirname(__file__), "style_buffer.qml")
+                    buffer_layer.loadNamedStyle(style_path)
 
                     # Get the layer tree and input layer's node
                     root = QgsProject.instance().layerTreeRoot()
@@ -912,6 +904,7 @@ class FaultBufferTool:
                         # Fallback: just add the layer normally
                         QgsProject.instance().addMapLayer(buffer_layer)
 
+        
                     buffer_layer.triggerRepaint()
                     QMessageBox.information(self.dlg, "Success", 
                         f"Buffer created successfully with symbology!")
@@ -924,4 +917,3 @@ class FaultBufferTool:
                 QgsMessageLog.logMessage(f"Traceback: {traceback.format_exc()}", "FaultBufferTool")
                 QMessageBox.critical(self.dlg, "Error", f"An unexpected error occurred: {str(e)}")
                 return
-
