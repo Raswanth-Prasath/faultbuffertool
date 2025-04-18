@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>392</width>
-    <height>532</height>
+    <width>388</width>
+    <height>578</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -17,7 +17,7 @@
    <property name="geometry">
     <rect>
      <x>30</x>
-     <y>500</y>
+     <y>540</y>
      <width>341</width>
      <height>32</height>
     </rect>
@@ -95,8 +95,8 @@
     <rect>
      <x>20</x>
      <y>380</y>
-     <width>231</width>
-     <height>111</height>
+     <width>351</width>
+     <height>151</height>
     </rect>
    </property>
    <property name="toolTip">
@@ -105,16 +105,51 @@
    <property name="title">
     <string>Fault Type</string>
    </property>
-   <widget class="QWidget" name="layoutWidget">
+   <widget class="QRadioButton" name="UniformFaultTypeRadioButton">
     <property name="geometry">
      <rect>
       <x>30</x>
       <y>20</y>
+      <width>160</width>
+      <height>20</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>Uniform fault type</string>
+    </property>
+    <property name="checked">
+     <bool>true</bool>
+    </property>
+   </widget>
+   <widget class="QRadioButton" name="FromShapefileFaultTypeRadioButton">
+    <property name="geometry">
+     <rect>
+      <x>30</x>
+      <y>120</y>
+      <width>160</width>
+      <height>20</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>From shapefile</string>
+    </property>
+    <property name="checked">
+     <bool>false</bool>
+    </property>
+   </widget>
+   <widget class="QWidget" name="layoutWidget">
+    <property name="geometry">
+     <rect>
+      <x>60</x>
+      <y>40</y>
       <width>162</width>
-      <height>76</height>
+      <height>72</height>
      </rect>
     </property>
     <layout class="QVBoxLayout" name="verticalLayout_2">
+     <property name="spacing">
+      <number>5</number>
+     </property>
      <item>
       <widget class="QRadioButton" name="StrikeslipFaultRadioButton">
        <property name="text">
@@ -146,9 +181,9 @@
    <property name="geometry">
     <rect>
      <x>20</x>
-     <y>100</y>
+     <y>93</y>
      <width>351</width>
-     <height>271</height>
+     <height>281</height>
     </rect>
    </property>
    <property name="title">
@@ -192,35 +227,6 @@
      <bool>true</bool>
     </property>
    </widget>
-   <widget class="QRadioButton" name="geologicJudgementRadioButton">
-    <property name="geometry">
-     <rect>
-      <x>10</x>
-      <y>210</y>
-      <width>151</width>
-      <height>20</height>
-     </rect>
-    </property>
-    <property name="toolTip">
-     <string/>
-    </property>
-    <property name="text">
-     <string>Geologic judgement</string>
-    </property>
-   </widget>
-   <widget class="QLineEdit" name="widthinput">
-    <property name="geometry">
-     <rect>
-      <x>50</x>
-      <y>230</y>
-      <width>113</width>
-      <height>31</height>
-     </rect>
-    </property>
-    <property name="toolTip">
-     <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p align=&quot;justify&quot;&gt;Apply this single uncertainty value to all mapped fault traces when the above results are inconsistent with geological judgment, perhaps reflecting the type and quality of data, the climate and/or characteristics of the fault.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt; </string>
-    </property>
-   </widget>
    <widget class="QLabel" name="label">
     <property name="geometry">
      <rect>
@@ -232,19 +238,6 @@
     </property>
     <property name="text">
      <string/>
-    </property>
-   </widget>
-   <widget class="QLabel" name="label_2">
-    <property name="geometry">
-     <rect>
-      <x>170</x>
-      <y>230</y>
-      <width>55</width>
-      <height>31</height>
-     </rect>
-    </property>
-    <property name="text">
-     <string>meters</string>
     </property>
    </widget>
    <widget class="QWidget" name="layoutWidget">
@@ -292,57 +285,166 @@
      </item>
     </layout>
    </widget>
-   <widget class="QGroupBox" name="groupBox_4">
+   <widget class="QRadioButton" name="geologicJudgementRadioButton">
     <property name="geometry">
      <rect>
       <x>10</x>
-      <y>140</y>
-      <width>321</width>
-      <height>61</height>
+      <y>190</y>
+      <width>141</width>
+      <height>20</height>
      </rect>
     </property>
-    <property name="styleSheet">
-     <string notr="true"/>
+    <property name="toolTip">
+     <string/>
+    </property>
+    <property name="text">
+     <string>Geologic judgement</string>
+    </property>
+   </widget>
+   <widget class="QWidget" name="gridLayoutWidget">
+    <property name="geometry">
+     <rect>
+      <x>30</x>
+      <y>214</y>
+      <width>175</width>
+      <height>53</height>
+     </rect>
+    </property>
+    <layout class="QGridLayout" name="gridLayout_2">
+     <item row="0" column="0">
+      <widget class="QRadioButton" name="fromShapefile">
+       <property name="toolTip">
+        <string/>
+       </property>
+       <property name="text">
+        <string>From shapefile</string>
+       </property>
+      </widget>
+     </item>
+     <item row="1" column="1">
+      <widget class="QSpinBox" name="widthinput">
+       <property name="maximum">
+        <number>1800</number>
+       </property>
+      </widget>
+     </item>
+     <item row="1" column="0">
+      <widget class="QRadioButton" name="inputWidth">
+       <property name="toolTip">
+        <string/>
+       </property>
+       <property name="text">
+        <string>Input width</string>
+       </property>
+       <property name="checked">
+        <bool>true</bool>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </widget>
+   <widget class="QGroupBox" name="units_container">
+    <property name="geometry">
+     <rect>
+      <x>210</x>
+      <y>214</y>
+      <width>131</width>
+      <height>51</height>
+     </rect>
+    </property>
+    <property name="contextMenuPolicy">
+     <enum>Qt::ActionsContextMenu</enum>
     </property>
     <property name="title">
-     <string>Fault confidence interval (Select one)</string>
+     <string>Units</string>
     </property>
-    <widget class="QWidget" name="layoutWidget">
+    <widget class="QWidget" name="horizontalLayoutWidget">
      <property name="geometry">
       <rect>
-       <x>40</x>
-       <y>30</y>
-       <width>172</width>
-       <height>22</height>
+       <x>10</x>
+       <y>20</y>
+       <width>125</width>
+       <height>31</height>
       </rect>
      </property>
-     <layout class="QHBoxLayout" name="horizontalLayout">
+     <layout class="QHBoxLayout" name="horizontalLayout_2">
       <item>
-       <widget class="QRadioButton" name="percentile50RadioButton">
+       <widget class="QRadioButton" name="feet">
+        <property name="toolTip">
+         <string/>
+        </property>
         <property name="text">
-         <string>50th</string>
+         <string>feet</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QRadioButton" name="meters">
+        <property name="toolTip">
+         <string/>
+        </property>
+        <property name="text">
+         <string>meters</string>
         </property>
         <property name="checked">
          <bool>true</bool>
         </property>
        </widget>
       </item>
-      <item>
-       <widget class="QRadioButton" name="percentile84RadioButton">
-        <property name="text">
-         <string>84th</string>
-        </property>
-       </widget>
-      </item>
-      <item>
-       <widget class="QRadioButton" name="percentile97RadioButton">
-        <property name="text">
-         <string>97th</string>
-        </property>
-       </widget>
-      </item>
      </layout>
     </widget>
+   </widget>
+   <widget class="QWidget" name="layoutWidget">
+    <property name="geometry">
+     <rect>
+      <x>50</x>
+      <y>160</y>
+      <width>172</width>
+      <height>22</height>
+     </rect>
+    </property>
+    <layout class="QHBoxLayout" name="horizontalLayout">
+     <item>
+      <widget class="QRadioButton" name="percentile50RadioButton">
+       <property name="text">
+        <string>50th</string>
+       </property>
+       <property name="checked">
+        <bool>true</bool>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QRadioButton" name="percentile84RadioButton">
+       <property name="text">
+        <string>84th</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QRadioButton" name="percentile97RadioButton">
+       <property name="contextMenuPolicy">
+        <enum>Qt::PreventContextMenu</enum>
+       </property>
+       <property name="text">
+        <string>97th</string>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </widget>
+   <widget class="QLabel" name="label_2">
+    <property name="geometry">
+     <rect>
+      <x>10</x>
+      <y>140</y>
+      <width>221</width>
+      <height>16</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>Fault confidence interval (Select one)</string>
+    </property>
    </widget>
   </widget>
  </widget>
