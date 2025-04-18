@@ -550,36 +550,109 @@ class FaultBufferTool:
         
         return True, ""
     
-    # Add these connections in your setupUi method or where you initialize the dialog
-    def setupDialogConnections(self):
-        """Set up signal connections for all UI controls"""
-        # Connect the Geologic Judgment option controls
-        self.dlg.geologicJudgementRadioButton.toggled.connect(self.updateGeologicJudgmentControls)
-        self.dlg.fromShapefile.toggled.connect(self.updateGeologicJudgmentControls)
-        self.dlg.inputWidth.toggled.connect(self.updateGeologicJudgmentControls)
-        
-        # Initialize UI state
-        self.updateGeologicJudgmentControls()
+    # --- UI State Management ---
 
-    def updateGeologicJudgmentControls(self):
-        """Update the visibility and enabled state of geologic judgment controls"""
-        # Enable/disable geologic judgment options based on selection
+    def setupDialogConnections(self):
+        """Set up signal connections for UI controls"""
+        # Connect main uncertainty mode radio buttons
+        self.dlg.geologicJudgementRadioButton.toggled.connect(self.update_ui_state)
+        self.dlg.generalUncertaintyRadioButton.toggled.connect(self.update_ui_state)
+        self.dlg.uncertaintyWithRankingRadioButton.toggled.connect(self.update_ui_state)
+
+        # Connect geologic judgment sub-options
+        self.dlg.fromShapefile.toggled.connect(self.update_ui_state) # Use main updater
+        self.dlg.inputWidth.toggled.connect(self.update_ui_state) # Use main updater
+
+        # Connect fault type mode radio buttons
+        self.dlg.UniformFaultTypeRadioButton.toggled.connect(self.update_ui_state)
+        self.dlg.FromShapefileFaultTypeRadioButton.toggled.connect(self.update_ui_state)
+
+        # Connect specific fault type radio buttons (might be overkill, but ensures consistency)
+        # self.dlg.StrikeslipFaultRadioButton.toggled.connect(self.update_ui_state)
+        # self.dlg.NormalFaultRadioButton.toggled.connect(self.update_ui_state)
+        # self.dlg.ReverseFaultRadioButton.toggled.connect(self.update_ui_state)
+
+
+    def update_ui_state(self):
+        """Updates the enabled/disabled state of UI elements based on selections."""
+        if not self.dlg: return
+
         is_geologic = self.dlg.geologicJudgementRadioButton.isChecked()
-        
-        # Enable/disable judgment type options
+        is_general = self.dlg.generalUncertaintyRadioButton.isChecked()
+        is_ranking = self.dlg.uncertaintyWithRankingRadioButton.isChecked()
+        is_uniform_fault = self.dlg.UniformFaultTypeRadioButton.isChecked()
+        # is_shapefile_fault = self.dlg.FromShapefileFaultTypeRadioButton.isChecked() # Not directly needed below
+
+
+        # --- Geologic Judgment Section ---
         self.dlg.fromShapefile.setEnabled(is_geologic)
         self.dlg.inputWidth.setEnabled(is_geologic)
         self.dlg.widthinput.setEnabled(is_geologic and self.dlg.inputWidth.isChecked())
-        
-        # Set default if nothing is selected
-        if is_geologic and not (self.dlg.fromShapefile.isChecked() or self.dlg.inputWidth.isChecked()):
-            self.dlg.inputWidth.setChecked(True)
-        
-        # Units are always enabled if geologic judgment is selected
         self.dlg.feet.setEnabled(is_geologic)
         self.dlg.meters.setEnabled(is_geologic)
-        if is_geologic and not (self.dlg.feet.isChecked() or self.dlg.meters.isChecked()):
-            self.dlg.meters.setChecked(True)  # Default to meters
+        # Set defaults within geologic mode if needed
+        if is_geologic:
+            if not (self.dlg.fromShapefile.isChecked() or self.dlg.inputWidth.isChecked()):
+                self.dlg.inputWidth.setChecked(True)
+            if not (self.dlg.feet.isChecked() or self.dlg.meters.isChecked()):
+                self.dlg.meters.setChecked(True)
+        else:
+            # Uncheck sub-options if geologic mode is disabled (optional, but cleaner)
+            # self.dlg.fromShapefile.setChecked(False)
+            # self.dlg.inputWidth.setChecked(False)
+            # self.dlg.widthinput.clear()
+            # self.dlg.feet.setChecked(False)
+            # self.dlg.meters.setChecked(False)
+            pass # Let user selections persist but be disabled
+
+
+        # --- Uncertainty Ranking Checkboxes ---
+        self.dlg.confidenceCheckBox.setEnabled(is_ranking)
+        self.dlg.primarySecondaryCheckBox.setEnabled(is_ranking)
+        self.dlg.simpleComplexCheckBox.setEnabled(is_ranking)
+        # Uncheck if ranking mode is disabled
+        if not is_ranking:
+            self.dlg.confidenceCheckBox.setChecked(False)
+            self.dlg.primarySecondaryCheckBox.setChecked(False)
+            self.dlg.simpleComplexCheckBox.setChecked(False)
+
+
+        # --- Percentile Radio Buttons ---
+        enable_percentiles = is_general or is_ranking
+        self.dlg.percentile50RadioButton.setEnabled(enable_percentiles)
+        self.dlg.percentile84RadioButton.setEnabled(enable_percentiles)
+        self.dlg.percentile97RadioButton.setEnabled(enable_percentiles)
+        # Ensure one is checked if enabled, else uncheck
+        if enable_percentiles:
+            if not (self.dlg.percentile50RadioButton.isChecked() or
+                    self.dlg.percentile84RadioButton.isChecked() or
+                    self.dlg.percentile97RadioButton.isChecked()):
+                self.dlg.percentile50RadioButton.setChecked(True)
+        else:
+            # Auto-exclusive group handles unchecking others, but let's ensure the state is clean if needed
+            # self.dlg.percentile50RadioButton.setChecked(False) # Might fight auto-exclusivity
+             pass
+
+
+        # --- Fault Type Specific Radio Buttons ---
+        # Enabled only if UniformFaultTypeRadioButton is checked
+        self.dlg.StrikeslipFaultRadioButton.setEnabled(is_uniform_fault)
+        self.dlg.NormalFaultRadioButton.setEnabled(is_uniform_fault)
+        self.dlg.ReverseFaultRadioButton.setEnabled(is_uniform_fault)
+        # Ensure one is checked if Uniform is active
+        if is_uniform_fault:
+            if not (self.dlg.StrikeslipFaultRadioButton.isChecked() or
+                    self.dlg.NormalFaultRadioButton.isChecked() or
+                    self.dlg.ReverseFaultRadioButton.isChecked()):
+                 self.dlg.StrikeslipFaultRadioButton.setChecked(True) # Default to Strike-slip
+        # else: # If not uniform, let selections persist but be disabled
+             # pass # No need to uncheck, just disable
+
+        # --- Optional: Update visibility/enabled state of Group Boxes ---
+        # self.dlg.groupBox_Geologic.setEnabled(is_geologic)
+        # self.dlg.groupBox_UncertaintyOptions.setEnabled(is_general or is_ranking)
+        # self.dlg.groupBox_RankingCriteria.setEnabled(is_ranking)
+        # self.dlg.groupBox_FaultTypeOptions.setEnabled(is_uniform_fault) # Maybe enable whole box
 
     def get_buffer_distance_for_feature(self, feature):
         """Get buffer distance based on geologic judgment settings"""
@@ -812,8 +885,9 @@ class FaultBufferTool:
             
         self.dlg.setupUi(self.dlg)
         
-        # Set up connections for UI controls
-        self.setupDialogConnections()
+        # --- Setup UI Connections and Initial State ---
+        self.setupDialogConnections() # Connect signals to slots
+        self.update_ui_state() # Set the initial enabled/disabled states
     
         # Configure the file widget explicitly
         self.dlg.mQgsFileWidget.setStorageMode(QgsFileWidget.SaveFile)
