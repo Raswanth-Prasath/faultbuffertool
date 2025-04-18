@@ -88,15 +88,15 @@ class FaultBufferTool:
         # Must be set in initGui() to survive plugin reloads
         self.first_start = None
         self.dlg = None
-        self.buffer_distances = { # This seems unused, but left it here from previous code
-            ('P', 1): 200,
-            ('P', 2): 80,
-            ('P', 3): 30,
-            ('P', 4): 10,
-            ('S', 1): 300,
-            ('S', 2): 100,
-            ('S', 3): 70,
-            ('S', 4): 20
+        self.buffer_distances = {
+            ('P', 1): 200,  # Primary, Quality 1
+            ('P', 2): 80,   # Primary, Quality 2
+            ('P', 3): 30,   # Primary, Quality 3
+            ('P', 4): 10,   # Primary, Quality 4
+            ('S', 1): 300,  # Secondary, Quality 1
+            ('S', 2): 100,  # Secondary, Quality 2
+            ('S', 3): 70,   # Secondary, Quality 3
+            ('S', 4): 20    # Secondary, Quality 4
         }
 
         # Uncertainty table for different criteria - UPDATED based on the provided text
@@ -173,7 +173,7 @@ class FaultBufferTool:
                 'uncertain_secondary_complex': {'50th': 25, '84th': 118, '97th': 500}
             },
             # For unpredicted ruptures
-            'unpredicted': { # This seems unused based on current UI, but left it here
+            'unpredicted': {
                 '50th': 300,
                 '84th': 1000,
                 '97th': 1700
@@ -295,16 +295,21 @@ class FaultBufferTool:
     def get_utm_crs(self, longitude, latitude):
         """Calculate the appropriate UTM CRS based on coordinates"""
         # Calculate UTM zone
+        # The Earth is divided into 60 UTM zones, each 6 degrees wide
+        # We add 180 to shift from (-180,180) range to (0,360) range
+        # Then divide by 6 to get the zone number (1-60)
         zone = int((longitude + 180) / 6) + 1
-
+        
         # Determine if Northern or Southern hemisphere
+        # - 326xx for Northern hemisphere (latitude > 0)
+        # - 327xx for Southern hemisphere (latitude < 0)
         if latitude > 0:
             epsg = f"326{zone:02d}"  # Northern hemisphere
         else:
             epsg = f"327{zone:02d}"  # Southern hemisphere
-
+        
         return QgsCoordinateReferenceSystem(f"EPSG:{epsg}")
-
+    
     def create_asymmetric_buffer(self, geometry, distance, dip_direction, input_crs, segments, buffer_ratio):
         """
         Creates an asymmetric buffer by:
@@ -315,26 +320,16 @@ class FaultBufferTool:
             from qgis.core import QgsFeature, QgsGeometry, QgsVectorLayer, QgsWkbTypes
 
             # Log initial parameters
-            # QgsMessageLog.logMessage(f"Starting asymmetric buffer creation: distance={distance}, dip={dip_direction}, ratio={buffer_ratio}", "FaultBufferTool")
-            # QgsMessageLog.logMessage(f"Input CRS for asymmetric buffer: {input_crs.authid()}", "FaultBufferTool")
+            QgsMessageLog.logMessage(f"Starting asymmetric buffer creation: distance={distance}, dip={dip_direction}, ratio={buffer_ratio}", "FaultBufferTool")
+            QgsMessageLog.logMessage(f"Input CRS for asymmetric buffer: {input_crs.authid()}", "FaultBufferTool")
 
             # Calculate translation based on buffer ratio
-            # translation_dist = distance * ((1-buffer_ratio)/(1+buffer_ratio)) # Original calculation - might be too complex if buffer() handles width correctly?
-            # Let's recalculate translation based on shifting the *centerline*
-            # Total width = 2 * distance. HW side = distance * (2 * buffer_ratio / (1+buffer_ratio)), FW side = distance * (2 * 1 / (1+buffer_ratio))
-            # Centerline shift = (FW_side - HW_side) / 2 = distance * (1 - buffer_ratio) / (1 + buffer_ratio)
-            translation_dist = distance * (1 - buffer_ratio) / (1 + buffer_ratio)
-
-
+            translation_dist = distance * ((1-buffer_ratio)/(1+buffer_ratio))
+            
             # Calculate diagonal distance for NE, NW, SE, SW directions
-            diagonal_dist = translation_dist / (2 ** 0.5) # sqrt(2)
-
-            # Calculate translation offsets based on dip direction (shifting *towards* the hanging wall)
-            # Example: Normal fault (FW:HW = 1:4), buffer_ratio=4. Shift = dist*(1-4)/(1+4) = -3/5*dist. Needs to shift AWAY from dip direction.
-            # Example: Reverse fault (FW:HW = 1:2), buffer_ratio=2. Shift = dist*(1-2)/(1+2) = -1/3*dist. Needs to shift AWAY from dip direction.
-            # So, we negate the translation distance calculation here.
-            translation_dist = -translation_dist
-
+            diagonal_dist = translation_dist / (2 ** 0.5)
+            
+            # Calculate translation offsets based on dip direction
             if dip_direction.upper() == 'N':
                 dx, dy = 0, translation_dist
             elif dip_direction.upper() == 'S':
@@ -344,38 +339,83 @@ class FaultBufferTool:
             elif dip_direction.upper() == 'W':
                 dx, dy = -translation_dist, 0
             elif dip_direction.upper() == 'NE':
-                dx, dy = translation_dist / (2**0.5), translation_dist / (2**0.5)
+                dx, dy = diagonal_dist, diagonal_dist
             elif dip_direction.upper() == 'NW':
-                dx, dy = -translation_dist / (2**0.5), translation_dist / (2**0.5)
+                dx, dy = -diagonal_dist, translation_dist
             elif dip_direction.upper() == 'SE':
-                dx, dy = translation_dist / (2**0.5), -translation_dist / (2**0.5)
+                dx, dy = diagonal_dist, -diagonal_dist
             elif dip_direction.upper() == 'SW':
-                dx, dy = -translation_dist / (2**0.5), -translation_dist / (2**0.5)
+                dx, dy = -diagonal_dist, -diagonal_dist
             else:
-                QgsMessageLog.logMessage(f"Invalid dip direction: {dip_direction}. Defaulting to East.", "FaultBufferTool")
+                QgsMessageLog.logMessage(f"Invalid dip direction: {dip_direction}", "FaultBufferTool")
                 dx, dy = translation_dist, 0  # Default to East if invalid
 
-            QgsMessageLog.logMessage(f"Calculated translation: dx={dx}, dy={dy} for dip={dip_direction}, dist={distance}, ratio={buffer_ratio}", "FaultBufferTool")
+            QgsMessageLog.logMessage(f"Translation values: dx={dx}, dy={dy}", "FaultBufferTool")
 
-            # Clone the original geometry to avoid modifying it
-            translated_geom = QgsGeometry(geometry)
-            # Translate the geometry
-            translated_geom.translate(dx, dy)
-
-            if not translated_geom or translated_geom.isEmpty():
-                 QgsMessageLog.logMessage(f"Translation resulted in empty geometry. dx={dx}, dy={dy}", "FaultBufferTool")
-                 return None
-
-            QgsMessageLog.logMessage("Creating buffer on translated geometry...", "FaultBufferTool")
-
-            # Create buffer using the *original* distance on the *translated* geometry
-            buffer_geom = translated_geom.buffer(distance, segments)
-
-            if not buffer_geom or buffer_geom.isEmpty() or not buffer_geom.isGeosValid():
-                QgsMessageLog.logMessage(f"Failed to create valid buffer geometry after translation. Buffer distance: {distance}", "FaultBufferTool")
+            # Create temporary layer with explicit CRS
+            temp_layer = QgsVectorLayer(f"LineString?crs={input_crs.authid()}", "temp", "memory")
+            if not temp_layer.isValid():
+                QgsMessageLog.logMessage("Failed to create temporary layer", "FaultBufferTool")
                 return None
 
-            QgsMessageLog.logMessage(f"Asymmetric buffer created successfully. Type: {buffer_geom.wkbType()}", "FaultBufferTool")
+            # Verify the temp layer CRS matches input CRS
+            if temp_layer.crs() != input_crs:
+                QgsMessageLog.logMessage(f"Warning: Temp layer CRS ({temp_layer.crs().authid()}) doesn't match input CRS ({input_crs.authid()})", "FaultBufferTool")
+                temp_layer.setCrs(input_crs)
+
+            # Add feature to temp layer
+            temp_provider = temp_layer.dataProvider()
+            temp_feat = QgsFeature()
+            temp_feat.setGeometry(geometry)
+            temp_provider.addFeatures([temp_feat])
+            if not temp_provider.addFeatures([temp_feat]):
+                QgsMessageLog.logMessage("Failed to add feature to temporary layer", "FaultBufferTool")
+                return None
+            
+            # Run translate algorithm
+            translate_params = {
+                'INPUT': temp_layer,
+                'DELTA_X': dx,
+                'DELTA_Y': dy,
+                'DELTA_Z': 0,
+                'DELTA_M': 0,
+                'OUTPUT': 'TEMPORARY_OUTPUT'
+            }
+
+            QgsMessageLog.logMessage("Running translate algorithm...", "FaultBufferTool")
+            translated_result = processing.run("native:translategeometry", translate_params)
+            
+            if not translated_result or 'OUTPUT' not in translated_result:
+                QgsMessageLog.logMessage("Translation algorithm failed", "FaultBufferTool")
+                return None
+            
+            # Get translated geometry
+            translated_layer = translated_result['OUTPUT']
+            
+            # Verify the translated layer has the correct CRS
+            if translated_layer.crs() != input_crs:
+                QgsMessageLog.logMessage(f"Warning: Translated layer CRS ({translated_layer.crs().authid()}) doesn't match input CRS ({input_crs.authid()})", "FaultBufferTool")
+            
+            # Store translated geometry for buffer creation
+            translated_geom = None 
+            for feat in translated_layer.getFeatures():
+                translated_geom = feat.geometry()
+                break
+
+            if not translated_geom:
+                QgsMessageLog.logMessage("Failed to get translated geometry", "FaultBufferTool")
+                return None
+                
+            QgsMessageLog.logMessage("Creating buffer...", "FaultBufferTool")
+            
+            # Create buffer
+            buffer_geom = translated_geom.buffer(distance, segments)
+            
+            if not buffer_geom or not buffer_geom.isGeosValid():
+                QgsMessageLog.logMessage("Failed to create valid buffer geometry", "FaultBufferTool")
+                return None
+            
+            QgsMessageLog.logMessage(f"Buffer created successfully. Type: {buffer_geom.wkbType()}", "FaultBufferTool")
             return buffer_geom
 
         except Exception as e:
@@ -383,734 +423,629 @@ class FaultBufferTool:
             import traceback
             QgsMessageLog.logMessage(f"Traceback: {traceback.format_exc()}", "FaultBufferTool")
             return None
-
+        
     def get_uncertainty_distance(self, feature):
         """
         Get buffer distance based on uncertainty rankings selected in the UI
         Only uses fields corresponding to checked boxes
         """
-        # Determine selected percentile (default to 50th if none/invalid)
-        percentile = '50th' # Default
-        if self.dlg.percentile84RadioButton.isChecked():
+        # Get selected confidence interval
+        if self.dlg.percentile50RadioButton.isChecked():
+            percentile = '50th'
+        elif self.dlg.percentile84RadioButton.isChecked():
             percentile = '84th'
         elif self.dlg.percentile97RadioButton.isChecked():
             percentile = '97th'
-
-        # General uncertainty (ignore rankings) - This takes precedence if selected
+        
+        # General uncertainty (ignore rankings)
         if self.dlg.generalUncertaintyRadioButton.isChecked():
-            return self.uncertainty_table['general'].get(percentile, 0) # Use .get for safety
-
-        # If not general uncertainty, proceed with ranking (only if uncertaintyWithRankingRadioButton is checked)
-        if not self.dlg.uncertaintyWithRankingRadioButton.isChecked():
-             QgsMessageLog.logMessage("Warning: get_uncertainty_distance called but ranking not selected. Returning 0.", "FaultBufferTool")
-             return 0 # Should not happen if UI logic is correct, but safe fallback
-
-        available_fields = [f.name().lower() for f in feature.fields()] # Use lower case for robustness
-
-        # Initialize variables with defaults or None if not checked
-        confidence_text = None
-        primary_secondary = None
-        simple_complex = None
-
-        # Check if ranking criteria checkboxes are checked and fields exist
-        conf_selected = self.dlg.confidenceCheckBox.isChecked() and 'quality' in available_fields
-        prim_sec_selected = self.dlg.primarySecondaryCheckBox.isChecked() and 'p or s' in available_fields
-        simple_complex_selected = self.dlg.simpleComplexCheckBox.isChecked() and 'simpcomp' in available_fields
-
-        # --- Get values based on selected criteria ---
-        if conf_selected:
-            confidence = feature['Quality'] # Assuming original case name 'Quality'
-            # Handle potential NULL or unexpected types
-            if confidence == 4: confidence_text = 'strong'
-            elif confidence == 3: confidence_text = 'distinct'
-            elif confidence == 2: confidence_text = 'weak'
-            elif confidence == 1: confidence_text = 'uncertain'
-            else: confidence_text = 'uncertain' # Default for unexpected values
-
-        if prim_sec_selected:
-            p_or_s_val = feature["P or S"] # Assuming original case name 'P or S'
-            # Handle potential NULL or unexpected types
-            if isinstance(p_or_s_val, str):
-                p_or_s = p_or_s_val.strip().upper()
-                primary_secondary = 'primary' if p_or_s == 'P' else 'secondary'
-            else:
-                primary_secondary = 'primary' # Default if value is missing/invalid
-
-        if simple_complex_selected:
-            simp_comp_val = feature['SimpComp'] # Assuming original case name 'SimpComp'
-             # Handle potential NULL or unexpected types
-            if isinstance(simp_comp_val, str):
-                simp_comp = simp_comp_val.strip().upper()
-                simple_complex = 'complex' if simp_comp == 'C' else 'simple'
-            else:
-                simple_complex = 'simple' # Default if value is missing/invalid
-
-        # --- Determine which table section to use ---
-        num_selected = sum([conf_selected, prim_sec_selected, simple_complex_selected])
-        distance = 0 # Default distance
-
-        try:
-            if num_selected == 3:
-                key = f"{confidence_text}_{primary_secondary}_{simple_complex}"
-                distance = self.uncertainty_table['all_criteria'].get(key, {}).get(percentile, 0)
-                QgsMessageLog.logMessage(f"Using all_criteria: key='{key}', percentile='{percentile}', dist={distance}", "FaultBufferTool")
-            elif num_selected == 2:
-                if conf_selected and prim_sec_selected:
-                    key = f"{confidence_text}_{primary_secondary}"
-                    distance = self.uncertainty_table['conf_prim_sec'].get(key, {}).get(percentile, 0)
-                    QgsMessageLog.logMessage(f"Using conf_prim_sec: key='{key}', percentile='{percentile}', dist={distance}", "FaultBufferTool")
-                elif conf_selected and simple_complex_selected:
-                    key = f"{confidence_text}_{simple_complex}"
-                    distance = self.uncertainty_table['conf_simple_complex'].get(key, {}).get(percentile, 0)
-                    QgsMessageLog.logMessage(f"Using conf_simple_complex: key='{key}', percentile='{percentile}', dist={distance}", "FaultBufferTool")
-                elif prim_sec_selected and simple_complex_selected:
-                    key = f"{primary_secondary}_{simple_complex}"
-                    distance = self.uncertainty_table['prim_sec_simple_complex'].get(key, {}).get(percentile, 0)
-                    QgsMessageLog.logMessage(f"Using prim_sec_simple_complex: key='{key}', percentile='{percentile}', dist={distance}", "FaultBufferTool")
-            elif num_selected == 1:
-                if conf_selected:
-                    distance = self.uncertainty_table['confidence'].get(confidence_text, {}).get(percentile, 0)
-                    QgsMessageLog.logMessage(f"Using confidence: key='{confidence_text}', percentile='{percentile}', dist={distance}", "FaultBufferTool")
-                elif prim_sec_selected:
-                    distance = self.uncertainty_table['primary_secondary'].get(primary_secondary, {}).get(percentile, 0)
-                    QgsMessageLog.logMessage(f"Using primary_secondary: key='{primary_secondary}', percentile='{percentile}', dist={distance}", "FaultBufferTool")
-                elif simple_complex_selected:
-                    distance = self.uncertainty_table['simple_complex'].get(simple_complex, {}).get(percentile, 0)
-                    QgsMessageLog.logMessage(f"Using simple_complex: key='{simple_complex}', percentile='{percentile}', dist={distance}", "FaultBufferTool")
-
-            # Fallback if no criteria were selected (should not happen if UI logic prevents this)
-            # Or if the specific combination wasn't found in the tables
-            if num_selected == 0 or distance == 0:
-                 QgsMessageLog.logMessage(f"Warning: No matching uncertainty criteria found or num_selected=0. Falling back to general uncertainty. Num selected={num_selected}", "FaultBufferTool")
-                 distance = self.uncertainty_table['general'].get(percentile, 0) # Fallback safely
-
-        except KeyError as e:
-             QgsMessageLog.logMessage(f"KeyError accessing uncertainty table: {e}. Falling back to general uncertainty.", "FaultBufferTool")
-             distance = self.uncertainty_table['general'].get(percentile, 0) # Fallback safely
-        except Exception as e:
-             QgsMessageLog.logMessage(f"Error in get_uncertainty_distance lookup: {e}. Falling back to general uncertainty.", "FaultBufferTool")
-             distance = self.uncertainty_table['general'].get(percentile, 0) # Fallback safely
-
-
-        return distance
-
+            return self.uncertainty_table['general'][percentile]
+        
+        available_fields = [f.name() for f in feature.fields()]
+        
+        # Initialize variables with defaults
+        confidence_text = 'uncertain'  # Default
+        primary_secondary = 'primary'  # Default
+        simple_complex = 'simple'      # Default
+        
+        # Only use the Quality field if Confidence checkbox is checked
+        if self.dlg.confidenceCheckBox.isChecked() and 'Quality' in available_fields:
+            confidence = feature['Quality']
+            if confidence == 4:
+                confidence_text = 'strong'
+            elif confidence == 3:
+                confidence_text = 'distinct'
+            elif confidence == 2:
+                confidence_text = 'weak'
+            elif confidence == 1:
+                confidence_text = 'uncertain'
+        
+        # Only use the P or S field if Primary/Secondary checkbox is checked
+        if self.dlg.primarySecondaryCheckBox.isChecked() and 'P or S' in available_fields:
+            p_or_s = feature["P or S"].strip().upper()
+            primary_secondary = 'primary' if p_or_s == 'P' else 'secondary'
+        
+        # Only use the SimpComp field if Simple/Complex checkbox is checked
+        if self.dlg.simpleComplexCheckBox.isChecked() and 'SimpComp' in available_fields:
+            simp_comp = feature['SimpComp'].strip().upper()
+            if simp_comp == 'C':
+                simple_complex = 'complex'
+            elif simp_comp == 'S':
+                simple_complex = 'simple'
+        
+        # Determine which criteria are selected
+        conf_selected = self.dlg.confidenceCheckBox.isChecked()
+        prim_sec_selected = self.dlg.primarySecondaryCheckBox.isChecked()
+        simple_complex_selected = self.dlg.simpleComplexCheckBox.isChecked()
+        
+        # Now determine which uncertainty table to use based on selected criteria
+        
+        # Use all three criteria if all are checked
+        if conf_selected and prim_sec_selected and simple_complex_selected:
+            key = f"{confidence_text}_{primary_secondary}_{simple_complex}"
+            return self.uncertainty_table['all_criteria'].get(key, {}).get(percentile, 0)
+        
+        # Use confidence and primary/secondary if those two are checked
+        elif conf_selected and prim_sec_selected:
+            key = f"{confidence_text}_{primary_secondary}"
+            return self.uncertainty_table['conf_prim_sec'].get(key, {}).get(percentile, 0)
+        
+        # Use confidence and simple/complex if those two are checked
+        elif conf_selected and simple_complex_selected:
+            key = f"{confidence_text}_{simple_complex}"
+            return self.uncertainty_table['conf_simple_complex'].get(key, {}).get(percentile, 0)
+        
+        # Use primary/secondary and simple/complex if those two are checked
+        elif prim_sec_selected and simple_complex_selected:
+            key = f"{primary_secondary}_{simple_complex}"
+            return self.uncertainty_table['prim_sec_simple_complex'].get(key, {}).get(percentile, 0)
+        
+        # Use only confidence if only that is checked
+        elif conf_selected:
+            return self.uncertainty_table['confidence'].get(confidence_text, {}).get(percentile, 0)
+        
+        # Use only primary/secondary if only that is checked
+        elif prim_sec_selected:
+            return self.uncertainty_table['primary_secondary'].get(primary_secondary, {}).get(percentile, 0)
+        
+        # Use only simple/complex if only that is checked
+        elif simple_complex_selected:
+            return self.uncertainty_table['simple_complex'].get(simple_complex, {}).get(percentile, 0)
+        
+        # Fallback to general uncertainty if nothing is selected (shouldn't happen)
+        return self.uncertainty_table['general'][percentile]
+    
     def validate_required_fields(self, input_layer):
         """
         Validates that the input layer has required fields based on selected options
-        Checks for fields based on UI selections at the time of validation.
-        Uses case-insensitive field name checking.
+        Only checks for fields that correspond to checked boxes
         """
-        available_fields_lower = [f.name().lower() for f in input_layer.fields()]
-        QgsMessageLog.logMessage(f"Available fields (lowercase): {available_fields_lower}", "FaultBufferTool")
-
-        # --- Geologic Judgment ---
+        available_fields = [f.name() for f in input_layer.fields()]
+        QgsMessageLog.logMessage(f"Available fields: {available_fields}", "FaultBufferTool")
+        
+        # If using geologic judgment, no field checks needed except Dip_direct for non-strike-slip faults
         if self.dlg.geologicJudgementRadioButton.isChecked():
-            # Check for geo_unc if reading from shapefile
-            if self.dlg.fromShapefile.isChecked() and 'geo_unc' not in available_fields_lower:
-                return False, "Field 'geo_unc' is required when 'From shapefile' is selected under Geologic Judgment."
-
-            # Check for Dip_direct if *any* non-strike-slip option is possible (uniform or shapefile)
-            # Needs Dip_direct if Normal or Reverse is chosen *uniformly* OR if reading from shapefile (as N/R might exist)
-            needs_dip_geo = (self.dlg.NormalFaultRadioButton.isChecked() or
-                             self.dlg.ReverseFaultRadioButton.isChecked() or
-                             self.dlg.FromShapefileFaultTypeRadioButton.isChecked())
-
-            if needs_dip_geo and 'dip_direct' not in available_fields_lower:
-                 # Clarify message based on selection
-                 if self.dlg.FromShapefileFaultTypeRadioButton.isChecked():
-                     return False, "Field 'Dip_direct' is required when reading fault type from shapefile (may contain Normal/Reverse faults)."
-                 else:
-                     return False, "Field 'Dip_direct' is required for uniformly selected Normal/Reverse faults under Geologic Judgment."
-            return True, "" # Geologic judgment validation passed
-
-        # --- Uncertainty with Ranking ---
-        elif self.dlg.uncertaintyWithRankingRadioButton.isChecked():
-            # Check selected ranking fields
-            if self.dlg.confidenceCheckBox.isChecked() and 'quality' not in available_fields_lower:
-                return False, "Field 'Quality' is required when 'Fault Confidence' ranking is checked."
-            if self.dlg.primarySecondaryCheckBox.isChecked() and 'p or s' not in available_fields_lower:
-                 return False, "Field 'P or S' is required when 'Primary versus Secondary' ranking is checked."
-            if self.dlg.simpleComplexCheckBox.isChecked() and 'simpcomp' not in available_fields_lower:
-                 return False, "Field 'SimpComp' is required when 'Simple versus complex' ranking is checked."
-
-             # Check for Dip_direct if *any* non-strike-slip option is possible (uniform or shapefile)
-            needs_dip_unc = (self.dlg.NormalFaultRadioButton.isChecked() or
-                             self.dlg.ReverseFaultRadioButton.isChecked() or
-                             self.dlg.FromShapefileFaultTypeRadioButton.isChecked())
-
-            if needs_dip_unc and 'dip_direct' not in available_fields_lower:
-                # Clarify message based on selection
-                if self.dlg.FromShapefileFaultTypeRadioButton.isChecked():
-                    return False, "Field 'Dip_direct' is required when reading fault type from shapefile (may contain Normal/Reverse faults)."
-                else:
-                    return False, "Field 'Dip_direct' is required for uniformly selected Normal/Reverse faults with Uncertainty Ranking."
-            return True, "" # Uncertainty ranking validation passed
-
-        # --- General Uncertainty ---
-        elif self.dlg.generalUncertaintyRadioButton.isChecked():
-             # Check for Dip_direct if *any* non-strike-slip option is possible (uniform or shapefile)
-            needs_dip_gen = (self.dlg.NormalFaultRadioButton.isChecked() or
-                             self.dlg.ReverseFaultRadioButton.isChecked() or
-                             self.dlg.FromShapefileFaultTypeRadioButton.isChecked())
-
-            if needs_dip_gen and 'dip_direct' not in available_fields_lower:
-                 # Clarify message based on selection
-                 if self.dlg.FromShapefileFaultTypeRadioButton.isChecked():
-                     return False, "Field 'Dip_direct' is required when reading fault type from shapefile (may contain Normal/Reverse faults)."
-                 else:
-                     return False, "Field 'Dip_direct' is required for uniformly selected Normal/Reverse faults with General Uncertainty."
-            return True, "" # General uncertainty validation passed
-
-        # Should not reach here if one of the main radio buttons is checked
-        return False, "No uncertainty/judgment mode selected."
-
-
-    # --- UI State Management ---
-
+            if not self.dlg.StrikeslipFaultRadioButton.isChecked():
+                if 'Dip_direct' not in available_fields:
+                    return False, "Field 'Dip_direct' is required for normal/reverse faults with geologic judgment option"
+            return True, ""
+        
+        # For uncertainty with ranking, check only selected ranking fields
+        if self.dlg.uncertaintyWithRankingRadioButton.isChecked():
+            # Only check for Quality field if Confidence checkbox is checked
+            if self.dlg.confidenceCheckBox.isChecked() and 'Quality' not in available_fields:
+                return False, "Required field 'Quality' not found in input layer for Confidence ranking!"
+            
+            # Only check for P or S field if Primary/Secondary checkbox is checked
+            if self.dlg.primarySecondaryCheckBox.isChecked() and 'P or S' not in available_fields:
+                return False, "Required field 'P or S' not found in input layer for Primary/Secondary ranking!"
+            
+            # Only check for SimpComp field if Simple/Complex checkbox is checked
+            if self.dlg.simpleComplexCheckBox.isChecked() and 'SimpComp' not in available_fields:
+                return False, "Required field 'SimpComp' not found in input layer for Simple/Complex ranking!"
+            
+            # Check for Dip_direct if not using Strike-slip fault type
+            if not self.dlg.StrikeslipFaultRadioButton.isChecked() and 'Dip_direct' not in available_fields:
+                return False, "Field 'Dip_direct' is required for normal/reverse faults"
+        
+        return True, ""
+    
+    # Add these connections in your setupUi method or where you initialize the dialog
     def setupDialogConnections(self):
-        """Set up signal connections for UI controls"""
-        # Connect main uncertainty mode radio buttons
-        self.dlg.geologicJudgementRadioButton.toggled.connect(self.update_ui_state)
-        self.dlg.generalUncertaintyRadioButton.toggled.connect(self.update_ui_state)
-        self.dlg.uncertaintyWithRankingRadioButton.toggled.connect(self.update_ui_state)
+        """Set up signal connections for all UI controls"""
+        # Connect the Geologic Judgment option controls
+        self.dlg.geologicJudgementRadioButton.toggled.connect(self.updateGeologicJudgmentControls)
+        self.dlg.fromShapefile.toggled.connect(self.updateGeologicJudgmentControls)
+        self.dlg.inputWidth.toggled.connect(self.updateGeologicJudgmentControls)
+        
+        # Initialize UI state
+        self.updateGeologicJudgmentControls()
 
-        # Connect geologic judgment sub-options
-        self.dlg.fromShapefile.toggled.connect(self.update_ui_state) # Use main updater
-        self.dlg.inputWidth.toggled.connect(self.update_ui_state) # Use main updater
-
-        # Connect fault type mode radio buttons
-        self.dlg.UniformFaultTypeRadioButton.toggled.connect(self.update_ui_state)
-        self.dlg.FromShapefileFaultTypeRadioButton.toggled.connect(self.update_ui_state)
-
-
-    def update_ui_state(self):
-        """Updates the enabled/disabled state of UI elements based on selections."""
-        if not self.dlg: return
-
+    def updateGeologicJudgmentControls(self):
+        """Update the visibility and enabled state of geologic judgment controls"""
+        # Enable/disable geologic judgment options based on selection
         is_geologic = self.dlg.geologicJudgementRadioButton.isChecked()
-        is_general = self.dlg.generalUncertaintyRadioButton.isChecked()
-        is_ranking = self.dlg.uncertaintyWithRankingRadioButton.isChecked()
-        is_uniform_fault = self.dlg.UniformFaultTypeRadioButton.isChecked()
-        # is_shapefile_fault = self.dlg.FromShapefileFaultTypeRadioButton.isChecked() # Not directly needed below
-
-
-        # --- Geologic Judgment Section ---
+        
+        # Enable/disable judgment type options
         self.dlg.fromShapefile.setEnabled(is_geologic)
         self.dlg.inputWidth.setEnabled(is_geologic)
         self.dlg.widthinput.setEnabled(is_geologic and self.dlg.inputWidth.isChecked())
+        
+        # Set default if nothing is selected
+        if is_geologic and not (self.dlg.fromShapefile.isChecked() or self.dlg.inputWidth.isChecked()):
+            self.dlg.inputWidth.setChecked(True)
+        
+        # Units are always enabled if geologic judgment is selected
         self.dlg.feet.setEnabled(is_geologic)
         self.dlg.meters.setEnabled(is_geologic)
-        # Set defaults within geologic mode if needed
-        if is_geologic:
-            if not (self.dlg.fromShapefile.isChecked() or self.dlg.inputWidth.isChecked()):
-                self.dlg.inputWidth.setChecked(True)
-            if not (self.dlg.feet.isChecked() or self.dlg.meters.isChecked()):
-                self.dlg.meters.setChecked(True)
-        else:
-            # Uncheck sub-options if geologic mode is disabled (optional, but cleaner)
-            # self.dlg.fromShapefile.setChecked(False)
-            # self.dlg.inputWidth.setChecked(False)
-            # self.dlg.widthinput.clear()
-            # self.dlg.feet.setChecked(False)
-            # self.dlg.meters.setChecked(False)
-            pass # Let user selections persist but be disabled
-
-
-        # --- Uncertainty Ranking Checkboxes ---
-        self.dlg.confidenceCheckBox.setEnabled(is_ranking)
-        self.dlg.primarySecondaryCheckBox.setEnabled(is_ranking)
-        self.dlg.simpleComplexCheckBox.setEnabled(is_ranking)
-        # Uncheck if ranking mode is disabled
-        if not is_ranking:
-            self.dlg.confidenceCheckBox.setChecked(False)
-            self.dlg.primarySecondaryCheckBox.setChecked(False)
-            self.dlg.simpleComplexCheckBox.setChecked(False)
-
-
-        # --- Percentile Radio Buttons ---
-        enable_percentiles = is_general or is_ranking
-        self.dlg.percentile50RadioButton.setEnabled(enable_percentiles)
-        self.dlg.percentile84RadioButton.setEnabled(enable_percentiles)
-        self.dlg.percentile97RadioButton.setEnabled(enable_percentiles)
-        # Ensure one is checked if enabled, else uncheck
-        if enable_percentiles:
-            if not (self.dlg.percentile50RadioButton.isChecked() or
-                    self.dlg.percentile84RadioButton.isChecked() or
-                    self.dlg.percentile97RadioButton.isChecked()):
-                self.dlg.percentile50RadioButton.setChecked(True)
-        else:
-            # Auto-exclusive group handles unchecking others, but let's ensure the state is clean if needed
-            # self.dlg.percentile50RadioButton.setChecked(False) # Might fight auto-exclusivity
-             pass
-
-
-        # --- Fault Type Specific Radio Buttons ---
-        # Enabled only if UniformFaultTypeRadioButton is checked
-        self.dlg.StrikeslipFaultRadioButton.setEnabled(is_uniform_fault)
-        self.dlg.NormalFaultRadioButton.setEnabled(is_uniform_fault)
-        self.dlg.ReverseFaultRadioButton.setEnabled(is_uniform_fault)
-        # Ensure one is checked if Uniform is active
-        if is_uniform_fault:
-            if not (self.dlg.StrikeslipFaultRadioButton.isChecked() or
-                    self.dlg.NormalFaultRadioButton.isChecked() or
-                    self.dlg.ReverseFaultRadioButton.isChecked()):
-                 self.dlg.StrikeslipFaultRadioButton.setChecked(True) # Default to Strike-slip
-        # else: # If not uniform, let selections persist but be disabled
-             # pass # No need to uncheck, just disable
-
+        if is_geologic and not (self.dlg.feet.isChecked() or self.dlg.meters.isChecked()):
+            self.dlg.meters.setChecked(True)  # Default to meters
 
     def get_buffer_distance_for_feature(self, feature):
         """Get buffer distance based on geologic judgment settings"""
-        if not self.dlg.geologicJudgementRadioButton.isChecked():
-            return 0 # Should not be called in this mode
-
-        # Get conversion factor based on units (default to meters)
-        conversion_factor = 1.0
+        
+        # Get conversion factor based on units
+        conversion_factor = 1.0  # Default for meters
         if self.dlg.feet.isChecked():
-            conversion_factor = 0.3048 # Feet to meters
-
+            # Convert feet to meters for calculation (if needed)
+            conversion_factor = 0.3048
+        
         if self.dlg.fromShapefile.isChecked():
             # Use attribute from shapefile
-            available_fields_lower = [f.name().lower() for f in feature.fields()]
-            if 'geo_unc' in available_fields_lower:
-                buffer_distance_val = feature['geo_unc'] # Assuming original name 'geo_unc'
-                # Make sure it's a valid positive number
-                if buffer_distance_val is not None and isinstance(buffer_distance_val, (int, float)) and buffer_distance_val > 0:
-                    return buffer_distance_val * conversion_factor
-                else:
-                    QgsMessageLog.logMessage(f"Invalid or non-positive 'geo_unc' value: {buffer_distance_val} for feature {feature.id()}. Skipping.", "FaultBufferTool")
-                    return 0 # Return 0 to indicate skipping
+            if 'geo_unc' in [f.name() for f in feature.fields()]:
+                buffer_distance = feature['geo_unc']
+                # Make sure it's a valid number
+                if buffer_distance is None or not isinstance(buffer_distance, (int, float)) or buffer_distance <= 0:
+                    QgsMessageLog.logMessage(f"Invalid geo_unc value: {buffer_distance} for feature {feature.id()}", "FaultBufferTool")
+                    return 0
+                
+                # Apply unit conversion
+                return buffer_distance * conversion_factor
             else:
-                # This should have been caught by validate_required_fields, but double-check
-                QgsMessageLog.logMessage(f"Feature {feature.id()} missing 'geo_unc' attribute required for 'From shapefile' geologic judgment. Skipping.", "FaultBufferTool")
-                return 0 # Return 0 to indicate skipping
-        elif self.dlg.inputWidth.isChecked():
-            # Use user input (already validated in run method)
-            try:
-                buffer_distance = float(self.dlg.widthinput.text())
-                if buffer_distance > 0:
-                    return buffer_distance * conversion_factor
-                else:
-                     QgsMessageLog.logMessage(f"User input width '{self.dlg.widthinput.text()}' is not positive. Skipping features for uniform width.", "FaultBufferTool")
-                     return 0 # Return 0 if width is not positive
-            except ValueError:
-                 QgsMessageLog.logMessage(f"Invalid user input width '{self.dlg.widthinput.text()}'. Skipping features for uniform width.", "FaultBufferTool")
-                 return 0 # Return 0 if input is invalid
+                QgsMessageLog.logMessage(f"Feature {feature.id()} does not have geo_unc attribute", "FaultBufferTool")
+                return 0
         else:
-            # Neither 'From shapefile' nor 'Input width' selected (shouldn't happen with UI logic)
-            return 0
-
-    def create_buffer_for_feature(self, feature, buffer_layer, distance, input_layer, transform=None,
-                        utm_crs=None, source_crs=None):
+            # Use user input
+            try:
+                # User input is already validated in the main run method
+                buffer_distance = float(self.dlg.widthinput.text())
+                # Apply unit conversion
+                return buffer_distance * conversion_factor
+            except ValueError:
+                return 0
+    
+    def create_buffer_for_feature(self, feature, buffer_layer, distance, input_layer, transform=None, 
+                        utm_crs=None, source_crs=None, buffer_type=""):
         """
-        Creates a buffer for a single feature with appropriate attributes and geometry handling.
-
+        Creates a buffer for a feature with all the proper attributes
+        
         Args:
-            feature: The input QgsFeature to buffer.
-            buffer_layer: The target memory QgsVectorLayer for the buffer output.
-            distance (float): The buffer distance (radius) in the units of utm_crs. Must be > 0.
-            input_layer: The original input QgsVectorLayer (for field reference).
-            transform (QgsCoordinateTransform, optional): Transform from source_crs to utm_crs.
-            utm_crs (QgsCoordinateReferenceSystem, optional): The projected CRS for buffering.
-            source_crs (QgsCoordinateReferenceSystem, optional): The original CRS of the input layer.
-
+            feature: The input feature to buffer
+            buffer_layer: The output buffer layer
+            distance: Buffer distance
+            input_layer: The original input layer
+            transform: Coordinate transform if needed
+            utm_crs: UTM CRS if applicable
+            source_crs: Source CRS if applicable
+            buffer_type: Type of buffer (for geologic judgment)
+            
         Returns:
-            bool: True if the buffer was created and added successfully, False otherwise.
+            bool: True if successful, False otherwise
         """
         try:
             fid = feature.id()
-            if distance <= 0:
-                 QgsMessageLog.logMessage(f"Feature {fid}: Skipping buffer creation due to non-positive distance ({distance}).", "FaultBufferTool")
-                 return False
-
+            # Get available fields from input feature
+            available_fields = [f.name() for f in feature.fields()]
+            
             # Get geometry and transform if needed
-            geometry = QgsGeometry(feature.geometry()) # Work on a copy
-            if transform and utm_crs and source_crs and geometry:
-                # QgsMessageLog.logMessage(f"Transforming geometry for feature {fid} from {source_crs.authid()} to {utm_crs.authid()}", "FaultBufferTool")
-                if not geometry.transform(transform):
-                     QgsMessageLog.logMessage(f"Feature {fid}: Geometry transformation failed. Skipping.", "FaultBufferTool")
-                     return False
-            elif not utm_crs:
-                 QgsMessageLog.logMessage(f"Feature {fid}: Missing UTM CRS for buffering. Skipping.", "FaultBufferTool")
-                 return False
-
-            if not geometry or geometry.isEmpty():
-                 QgsMessageLog.logMessage(f"Feature {fid}: Geometry is invalid or empty after potential transformation. Skipping.", "FaultBufferTool")
-                 return False
-
-            # --- Determine Buffer Type and Parameters ---
-            segments = 5  # Default segments for buffer function
-            buffer_ratio = 1.0  # Default for symmetric buffers (FW:HW = 1:1)
+            geometry = feature.geometry()
+            
+            # Transform to projected CRS if needed
+            if transform and utm_crs:
+                QgsMessageLog.logMessage(f"Transforming geometry from {source_crs.authid()} to {utm_crs.authid()}", "FaultBufferTool")
+                geometry.transform(transform)
+            
+            # Set number of segments for buffer
+            segments = 5  # Default value
+            buffer_ratio = 1.0  # Default value for symmetric buffers
+            buffer_geom = None
             dip_direction = None
             is_asymmetric = False
-            fault_type_str = "Symmetric" # Default buffer type description
-
-            available_fields_lower = [f.name().lower() for f in feature.fields()]
-
-            # Check Fault Type Selection (Uniform or From Shapefile)
+            fault_type_str = "Unknown"
+            
             if self.dlg.UniformFaultTypeRadioButton.isChecked():
+                # Check which fault type is selected
                 if self.dlg.StrikeslipFaultRadioButton.isChecked():
+                    # Symmetric buffer for strike-slip faults
                     fault_type_str = "Strike-slip (Uniform)"
                     is_asymmetric = False
+                    buffer_ratio = 1.0
+                    QgsMessageLog.logMessage(f"Creating symmetric buffer for strike-slip fault, distance={distance}", "FaultBufferTool")
+                
                 elif self.dlg.NormalFaultRadioButton.isChecked():
                     fault_type_str = "Normal (Uniform)"
                     is_asymmetric = True
-                    buffer_ratio = 4.0 # FW:HW = 1:4 -> HW is 4 times FW -> ratio HW/FW = 4
+                    buffer_ratio = 1/4  # Normal 1:4 FW:HW
+                    QgsMessageLog.logMessage(f"Setting up Normal fault buffer with ratio {buffer_ratio}", "FaultBufferTool")
+                
                 elif self.dlg.ReverseFaultRadioButton.isChecked():
                     fault_type_str = "Reverse (Uniform)"
                     is_asymmetric = True
-                    buffer_ratio = 2.0 # FW:HW = 1:2 -> HW is 2 times FW -> ratio HW/FW = 2
+                    buffer_ratio = 1/2  # Reverse 1:2 FW:HW
+                    QgsMessageLog.logMessage(f"Setting up Reverse fault buffer with ratio {buffer_ratio}", "FaultBufferTool")
+            
             elif self.dlg.FromShapefileFaultTypeRadioButton.isChecked():
-                if 'fault_type' in available_fields_lower:
-                    fault_code_val = feature['Fault_type'] # Assuming original name 'Fault_type'
-                    if isinstance(fault_code_val, str):
-                        fault_code = fault_code_val.strip().upper()
+                # Use the buffer type from the shapefile
+                if 'Fault_type' in available_fields:
+                    fault_code = feature['Fault_type']
+                    if isinstance(fault_code, str):
+                        fault_code = fault_code.strip().upper()
                         if fault_code == 'S':
-                            fault_type_str = "Strike-slip (Shapefile)"
+                            fault_type_str = "Strike-slip (From Shapefile)"
                             is_asymmetric = False
+                            buffer_ratio = 1.0
+                            QgsMessageLog.logMessage(f"Creating symmetric buffer for Strike-slip fault from shapefile, distance={distance}", "FaultBufferTool")
+                        
                         elif fault_code == 'N':
-                            fault_type_str = "Normal (Shapefile)"
+                            fault_type_str = "Normal (From Shapefile)"
                             is_asymmetric = True
-                            buffer_ratio = 4.0
+                            buffer_ratio = 1/4
+                            QgsMessageLog.logMessage(f"Setting up Normal fault buffer from shapefile with ratio {buffer_ratio}", "FaultBufferTool")
+                        
                         elif fault_code == 'R':
-                            fault_type_str = "Reverse (Shapefile)"
+                            fault_type_str = "Reverse (From Shapefile)"
                             is_asymmetric = True
-                            buffer_ratio = 2.0
+                            buffer_ratio = 1/2
+                            QgsMessageLog.logMessage(f"Setting up Reverse fault buffer from shapefile with ratio {buffer_ratio}", "FaultBufferTool")
+                        
                         else:
-                            fault_type_str = f"Strike-slip (Invalid Shapefile Type: '{fault_code_val}')"
-                            is_asymmetric = False # Fallback to symmetric
-                            QgsMessageLog.logMessage(f"Feature {fid}: Invalid Fault_type '{fault_code_val}'. Defaulting to Symmetric.", "FaultBufferTool")
+                            QgsMessageLog.logMessage(f"Feature {fid}: Invalid Fault_type '{fault_code}'. Defaulting to Strike-slip.", "FaultBufferTool")
+                            fault_type_str = f"Strike-slip (Invalid Attribute: {fault_code})"
+                            is_asymmetric = False
+                            buffer_ratio = 1.0
                     else:
-                         fault_type_str = f"Strike-slip (Missing/Invalid Shapefile Type)"
-                         is_asymmetric = False # Fallback
-                         QgsMessageLog.logMessage(f"Feature {fid}: Missing or non-string Fault_type attribute. Defaulting to Symmetric.", "FaultBufferTool")
+                        QgsMessageLog.logMessage(f"Feature {fid}: Missing or non-string Fault_type attribute '{fault_code}'. Defaulting to Strike-slip.", "FaultBufferTool")
+                        fault_type_str = "Strike-slip (Missing/Invalid Attribute)"
+                        is_asymmetric = False
+                        buffer_ratio = 1.0
                 else:
-                    fault_type_str = "Strike-slip (Missing Shapefile Field)"
-                    is_asymmetric = False # Fallback
-                    QgsMessageLog.logMessage(f"Feature {fid}: Missing 'Fault_type' field. Defaulting to Symmetric.", "FaultBufferTool")
-
-            # Get Dip Direction ONLY if asymmetry is needed
+                    QgsMessageLog.logMessage(f"Feature {fid}: Missing 'Fault_type' field. Defaulting to Strike-slip.", "FaultBufferTool")
+                    fault_type_str = "Strike-slip (Missing Field)"
+                    is_asymmetric = False
+                    buffer_ratio = 1.0
+            
+            # Get dip direction ONLY if needed for asymmetry
             if is_asymmetric:
-                if 'dip_direct' in available_fields_lower:
-                    dip_dir_val = feature['Dip_direct'] # Assuming original name 'Dip_direct'
-                    if isinstance(dip_dir_val, str) and dip_dir_val.strip():
-                        dip_dir_candidate = dip_dir_val.strip().upper()
+                if 'Dip_direct' in available_fields:
+                    field_value = feature['Dip_direct']
+                    if field_value and isinstance(field_value, str) and field_value.strip():
+                        dip_dir_candidate = field_value.strip().upper()
                         valid_directions = ['N', 'S', 'E', 'W', 'NE', 'NW', 'SE', 'SW']
                         if dip_dir_candidate in valid_directions:
-                            dip_direction = dip_dir_candidate # Store the valid direction
+                            dip_direction = dip_dir_candidate  # Store the valid direction
                         else:
-                            QgsMessageLog.logMessage(f"Feature {fid}: Invalid Dip_direct value '{dip_dir_val}'. Falling back to symmetric buffer.", "FaultBufferTool")
-                            is_asymmetric = False # Fallback
-                            fault_type_str += " (Symmetric Fallback - Invalid Dip)"
+                            QgsMessageLog.logMessage(f"Feature {fid}: Invalid dip direction value '{field_value}'. Cannot create asymmetric buffer. Falling back to symmetric.", "FaultBufferTool")
+                            is_asymmetric = False  # Fallback
+                            fault_type_str += f" (Symmetric Fallback - Invalid Dip: {field_value})"
                     else:
-                        QgsMessageLog.logMessage(f"Feature {fid}: Empty or non-string Dip_direct value '{dip_dir_val}'. Falling back to symmetric buffer.", "FaultBufferTool")
-                        is_asymmetric = False # Fallback
+                        QgsMessageLog.logMessage(f"Feature {fid}: Empty or non-string dip direction value '{field_value}'. Cannot create asymmetric buffer. Falling back to symmetric.", "FaultBufferTool")
+                        is_asymmetric = False  # Fallback
                         fault_type_str += " (Symmetric Fallback - Empty/Invalid Dip)"
                 else:
-                    # This should have been caught by validate_required_fields
-                    QgsMessageLog.logMessage(f"Feature {fid}: Missing 'Dip_direct' field required for asymmetric buffer. Falling back to symmetric.", "FaultBufferTool")
-                    is_asymmetric = False # Fallback
+                    QgsMessageLog.logMessage(f"Feature {fid}: Missing 'Dip_direct' field required for asymmetric buffer. Cannot create asymmetric buffer. Falling back to symmetric.", "FaultBufferTool")
+                    is_asymmetric = False  # Fallback
                     fault_type_str += " (Symmetric Fallback - Missing Dip Field)"
-
-            # --- Create Buffer Geometry ---
-            buffer_geom = None
+            
+            # Create buffer
             if is_asymmetric and dip_direction:
-                QgsMessageLog.logMessage(f"Feature {fid}: Attempting asymmetric buffer: dist={distance}, ratio={buffer_ratio}, dip={dip_direction}", "FaultBufferTool")
+                QgsMessageLog.logMessage(f"Attempting asymmetric buffer for feature {fid}: dist={distance}, ratio={buffer_ratio}, dip={dip_direction}", "FaultBufferTool")
                 buffer_geom = self.create_asymmetric_buffer(
                     geometry, distance, dip_direction, utm_crs, segments, buffer_ratio
                 )
                 if not buffer_geom or buffer_geom.isEmpty():
-                    QgsMessageLog.logMessage(f"Feature {fid}: Asymmetric buffer creation failed. Falling back to symmetric.", "FaultBufferTool")
-                    fault_type_str += " (Symmetric Fallback - Asym Creation Failed)"
-                    # Reset flags for symmetric buffer creation below
-                    is_asymmetric = False
-                    dip_direction = None
-                    buffer_geom = None # Ensure it's None so symmetric buffer is created
+                    QgsMessageLog.logMessage(f"Feature {fid}: Asymmetric buffer creation failed. Falling back to symmetric buffer.", "FaultBufferTool")
+                    # Fallback handled below, buffer_geom is None or empty
+                    fault_type_str += " (Symmetric Fallback - Asym Buffer Failed)"
                 else:
                     QgsMessageLog.logMessage(f"Feature {fid}: Asymmetric buffer created.", "FaultBufferTool")
-                    fault_type_str += f" (Asymmetric Ratio={buffer_ratio:.2f})" # Add ratio info
-
-            # Create symmetric buffer if needed (not asymmetric or asymmetric failed)
-            if not buffer_geom:
-                QgsMessageLog.logMessage(f"Feature {fid}: Creating symmetric buffer, distance={distance}", "FaultBufferTool")
+            
+            # If asymmetric failed or was never attempted/required, create symmetric
+            if not buffer_geom or buffer_geom.isEmpty():
+                QgsMessageLog.logMessage(f"Creating symmetric buffer for feature {fid}, dist={distance}", "FaultBufferTool")
                 buffer_geom = geometry.buffer(distance, segments)
                 if not buffer_geom or buffer_geom.isEmpty():
-                    QgsMessageLog.logMessage(f"Feature {fid}: Symmetric buffer creation failed. Skipping feature.", "FaultBufferTool")
-                    return False # Cannot proceed if even symmetric fails
-
-            # Validate final buffer geometry
+                    QgsMessageLog.logMessage(f"Feature {fid}: Symmetric buffer creation also failed.", "FaultBufferTool")
+                    return False  # Cannot proceed if even symmetric fails
+            
+            # Create buffer feature with appropriate attributes
             if not buffer_geom or buffer_geom.isEmpty() or not buffer_geom.isGeosValid():
                 QgsMessageLog.logMessage(f"Feature {fid}: Final buffer geometry is invalid or empty. Skipping.", "FaultBufferTool")
-                return False
-
-            # --- Create Output Feature ---
+                return False  # Skip this feature
+            
             buffer_feature = QgsFeature(buffer_layer.fields())
             buffer_feature.setGeometry(buffer_geom)
-
-            # Copy attributes from original feature, checking if field exists in output
+            
+            # Copy attributes from original feature first
             buffer_field_names = [f.name() for f in buffer_layer.fields()]
-            for field in input_layer.fields():
+            for field in input_layer.fields():  # Iterate through input fields schema
                 field_name = field.name()
-                if field_name in buffer_field_names and field_name in feature.attributes(): # Check input feature has the attribute too
-                     try:
-                         buffer_feature.setAttribute(field_name, feature[field_name])
-                     except KeyError:
-                          # This might happen if the input feature schema differs slightly from layer schema
-                          QgsMessageLog.logMessage(f"Feature {fid}: Could not copy attribute '{field_name}'. Field might be missing in this specific feature.", "FaultBufferTool")
-
-
-            # Set/Overwrite buffer-specific attributes (check if fields exist)
+                if field_name in buffer_field_names:  # Check if field exists in output
+                    if field_name in available_fields:  # Check if field exists in *this* input feature
+                        buffer_feature.setAttribute(field_name, feature[field_name])
+            
+            # Set/Overwrite buffer-specific attributes
+            if "original_id" in buffer_field_names:
+                buffer_feature.setAttribute("original_id", fid)
             if "Buffer_Dist" in buffer_field_names:
-                buffer_feature.setAttribute("Buffer_Dist", float(distance)) # Ensure float
+                buffer_feature.setAttribute("Buffer_Dist", distance)
+            if "Dip_Direction" in buffer_field_names:
+                # Only store dip direction if asymmetry was successfully applied
+                buffer_feature.setAttribute("Dip_Direction", dip_direction if is_asymmetric and dip_direction else None)
             if "Buffer_Type" in buffer_field_names:
                 buffer_feature.setAttribute("Buffer_Type", fault_type_str)
-            if "Dip_Direction" in buffer_field_names:
-                # Store dip direction ONLY if asymmetry was successfully applied
-                buffer_feature.setAttribute("Dip_Direction", dip_direction if is_asymmetric and dip_direction else None)
-            # Consider adding original_id if helpful for tracing back
-            # if "original_id" in buffer_field_names:
-            #     buffer_feature.setAttribute("original_id", fid)
-
-
+            
             # Add feature to buffer layer
-            if not buffer_layer.dataProvider().addFeature(buffer_feature):
-                QgsMessageLog.logMessage(f"Feature {fid}: Failed to add buffered feature to the output layer.", "FaultBufferTool")
+            buffer_provider = buffer_layer.dataProvider()
+            if not buffer_provider.addFeature(buffer_feature):
+                QgsMessageLog.logMessage(f"Feature {fid}: Failed to add buffered feature to layer.", "FaultBufferTool")
                 return False
-
-            return True # Success
-
+            
+            return True
+            
         except Exception as e:
             fid_str = f"feature {feature.id()}" if feature else "unknown feature"
-            QgsMessageLog.logMessage(f"Error in create_buffer_for_feature for {fid_str}: {str(e)}", "FaultBufferTool")
+            QgsMessageLog.logMessage(f"Error creating buffer for {fid_str}: {str(e)}", "FaultBufferTool")
             import traceback
             QgsMessageLog.logMessage(f"Traceback: {traceback.format_exc()}", "FaultBufferTool")
             return False
-
+    
     def run(self):
         """Run method that performs all the real work"""
-        # Create the dialog if it's the first time
-        if self.first_start:
+        # Create the dialog
+        self.dlg = FaultBufferToolDialog()
+        
+        # Create the dialog with elements (after translation) and keep reference
+        # Only create GUI ONCE in callback, so that it will only load when the plugin is started
+        if self.first_start == True:
             self.first_start = False
             self.dlg = FaultBufferToolDialog()
-            self.dlg.setupUi(self.dlg) # Setup the UI elements from the .ui file
+            
+        self.dlg.setupUi(self.dlg)
+        
+        # Set up connections for UI controls
+        self.setupDialogConnections()
+    
+        # Configure the file widget explicitly
+        self.dlg.mQgsFileWidget.setStorageMode(QgsFileWidget.SaveFile)
+        self.dlg.mQgsFileWidget.setFilter("Shapefiles (*.shp)")
+        self.dlg.mQgsFileWidget.setFilePath("")  # Clear any previous path
 
-            # --- Setup UI Connections and Initial State ---
-            self.setupDialogConnections() # Connect signals to slots
-            self.update_ui_state() # Set the initial enabled/disabled states
-
-            # Configure the file widget
-            self.dlg.mQgsFileWidget.setStorageMode(QgsFileWidget.SaveFile)
-            self.dlg.mQgsFileWidget.setFilter("ESRI Shapefile (*.shp)") # Standard filter name
-            self.dlg.mQgsFileWidget.setFilePath("")
-
-        # Clear previous output path if reusing dialog
-        self.dlg.mQgsFileWidget.setFilePath("")
-
-        # Show the dialog
+        # show the dialog
         self.dlg.show()
-
+        
         # Run the dialog event loop
         result = self.dlg.exec_()
         # See if OK was pressed
         if result:
-            # --- Start Processing ---
+            # Do something useful here - delete the line containing pass and
+            # substitute with your code.
+            
             try:
-                # Get input layer
+                # Get the input layer
                 input_layer = self.dlg.mMapLayerComboBox.currentLayer()
-                if not input_layer or not isinstance(input_layer, QgsVectorLayer):
-                    QMessageBox.critical(self.dlg, "Error", "Please select a valid vector layer.")
+                if not input_layer:
+                    QMessageBox.critical(self.dlg, "Error", "Please select an input layer")
                     return
-
-                # Get output path
+                
+                # Get the output path
                 output_path = self.dlg.mQgsFileWidget.filePath()
                 if not output_path:
-                    QMessageBox.critical(self.dlg, "Error", "Please specify an output shapefile location.")
+                    QMessageBox.critical(self.dlg, "Error", "Please select an output location")
                     return
-                if not output_path.lower().endswith('.shp'):
+                
+                if not output_path.endswith('.shp'):
                     output_path += '.shp'
-
-                # --- Validate Selections and Required Fields ---
+                    
+                # Log available fields for debugging
+                QgsMessageLog.logMessage(f"Available fields: {[f.name() for f in input_layer.fields()]}", "FaultBufferTool")
+                
+                # Validate required fields early to fail fast
                 is_valid, error_message = self.validate_required_fields(input_layer)
                 if not is_valid:
-                    QMessageBox.critical(self.dlg, "Missing Field Error", error_message)
-                    return
-
-                # Validate specific inputs based on mode
-                if self.dlg.geologicJudgementRadioButton.isChecked() and self.dlg.inputWidth.isChecked():
-                    try:
-                        width = float(self.dlg.widthinput.text())
-                        if width <= 0:
-                            QMessageBox.critical(self.dlg, "Input Error", "Please enter a positive number for the buffer width.")
-                            return
-                    except ValueError:
-                         QMessageBox.critical(self.dlg, "Input Error", "Please enter a valid number for the buffer width.")
-                         return
-
-                # --- CRS Handling ---
+                    QMessageBox.critical(self.dlg, "Error", error_message)
+                    return    
+                   
+                # Get and check the layer's CRS
                 source_crs = input_layer.crs()
-                transform = None
-                utm_crs = None
-
+                               
+                # If the CRS is isgeographic, (like EPSG:4326), we'll need to transform to a projected CRS
                 if source_crs.isGeographic():
-                    try:
-                        center_point = input_layer.extent().center()
-                        utm_crs = self.get_utm_crs(center_point.x(), center_point.y())
-                        if not utm_crs.isValid():
-                             raise ValueError(f"Could not determine a valid UTM CRS for center {center_point.x()}, {center_point.y()}")
-                        transform = QgsCoordinateTransform(source_crs, utm_crs, QgsProject.instance().transformContext())
-                        QgsMessageLog.logMessage(f"Source CRS is geographic ({source_crs.authid()}). Using UTM CRS: {utm_crs.authid()}", "FaultBufferTool")
-                    except Exception as e:
-                         QMessageBox.critical(self.dlg, "CRS Error", f"Could not determine projected CRS for buffering: {e}")
-                         return
+                    # Print some debug information
+                    QgsMessageLog.logMessage(f"Source CRS is geographic: {source_crs.description()}", "Buffer Tool")
+                    
+                    # Get the UTM zome for the layer's extent
+                    center_point = input_layer.extent().center()
+                    utm_crs = self.get_utm_crs(center_point.x(), center_point.y()) # Get UTM CRS based on center point
+
+                    QgsMessageLog.logMessage(f"Selected UTM CRS: {utm_crs.description()}", "Buffer Tool") 
+                    
+                    # Create transform context
+                    transform = QgsCoordinateTransform(source_crs, utm_crs, QgsProject.instance()) 
+                    
+                    # Create new layer in UTM projection
+                    buffer_layer = QgsVectorLayer(f"Polygon?crs={utm_crs.authid()}", "buffers", "memory")
                 else:
-                    utm_crs = source_crs # Already projected
-                    QgsMessageLog.logMessage(f"Source CRS is projected: {source_crs.authid()}. Using it for buffering.", "FaultBufferTool")
-
-                if not utm_crs or not utm_crs.isValid():
-                     QMessageBox.critical(self.dlg, "CRS Error", "Could not establish a valid projected CRS for buffering.")
-                     return
-
-                # --- Prepare Output Layer ---
-                buffer_layer = QgsVectorLayer(f"Polygon?crs={utm_crs.authid()}", "temp_buffers", "memory")
+                    # Use the same CRS as input if it's already projected
+                    QgsMessageLog.logMessage(f"Source CRS is projected: {source_crs.description()}", "Buffer Tool")
+                    buffer_layer = QgsVectorLayer(f"Polygon?crs={source_crs.authid()}", "buffers", "memory")
+                    transform = None
+                    utm_crs = source_crs  # No need to transform if already projected
+                
+                QgsMessageLog.logMessage(f"Input CRS: {source_crs.authid()}", "FaultBufferTool")
+                QgsMessageLog.logMessage(f"Buffer layer CRS: {buffer_layer.crs().authid()}", "FaultBufferTool")
+                # QgsMessageLog.logMessage(f"UTM CRS for calculations: {utm_crs.authid()}", "FaultBufferTool")
+                
+                # Create output layer with appropriate fields
                 buffer_provider = buffer_layer.dataProvider()
-
-                # Copy fields from input layer + add buffer-specific fields
+                
+                # First add all the original fields from the input layer
                 input_fields = input_layer.fields()
-                fields_to_add = list(input_fields) # Start with a copy of input fields
+                fields_to_add = []
+                for field in input_fields:
+                    fields_to_add.append(QgsField(field.name(), field.type(), field.typeName(), 
+                                                field.length(), field.precision(), field.comment()))
+                
+                # Then add the buffer-specific fields
                 fields_to_add.extend([
-                    QgsField("Buffer_Dist", QVariant.Double, len=20, prec=3), # Increased precision maybe
-                    QgsField("Buffer_Type", QVariant.String, len=80), # Longer string for detailed type
+                    QgsField("Buffer_Dist", QVariant.Double, len=20, prec=2),
+                    QgsField("Buffer_Type", QVariant.String, len=50),
                     QgsField("Dip_Direction", QVariant.String, len=10)
-                    # QgsField("original_id", QVariant.Int) # Optional tracking field
                 ])
+                
+                # Add all fields to the buffer layer
                 buffer_provider.addAttributes(fields_to_add)
+
                 buffer_layer.updateFields()
-                QgsMessageLog.logMessage("Output buffer layer fields initialized.", "FaultBufferTool")
+                QgsMessageLog.logMessage("Buffer layer fields initialized", "FaultBufferTool")
+                
+                # Process features based on selected mode
+                # Inside the run method, replace the existing geologic judgment code:
+                if self.dlg.geologicJudgementRadioButton.isChecked():
+                    # Handle Geologic judgment option
+                    try:
+                        # Check if user selected "From shapefile" or "Input width"
+                        if self.dlg.fromShapefile.isChecked():
+                            # Validate geo_unc field exists
+                            if 'geo_unc' not in [f.name() for f in input_layer.fields()]:
+                                QMessageBox.critical(self.dlg, "Error", 
+                                    "The 'geo_unc' field does not exist in the input layer. Please select a layer with this field or use 'Input width' option.")
+                                return
+                                
+                            # Process each feature with its geo_unc attribute
+                            for feature in input_layer.getFeatures():
+                                buffer_distance = self.get_buffer_distance_for_feature(feature)
+                                if buffer_distance <= 0:
+                                    QgsMessageLog.logMessage(f"Skipping feature {feature.id()}: Invalid geo_unc value", "FaultBufferTool")
+                                    continue
+                                
+                                # Create buffer with common method
+                                success = self.create_buffer_for_feature(
+                                    feature, buffer_layer, buffer_distance, input_layer,
+                                    transform, utm_crs, source_crs, "Geologic judgment - From shapefile"
+                                )
+                                if not success:
+                                    QgsMessageLog.logMessage(f"Failed to create buffer for feature {feature.id()}", "FaultBufferTool")
+                        
+                        else:  # Input width selected
+                            # Get the user-specified buffer distance
+                            try:
+                                user_buffer_distance = float(self.dlg.widthinput.text())
+                                if user_buffer_distance <= 0:
+                                    QMessageBox.critical(self.dlg, "Error", "Please enter a positive buffer distance value")
+                                    return
+                            except ValueError:
+                                QMessageBox.critical(self.dlg, "Error", "Please enter a valid number for buffer distance")
+                                return
+                            
+                            # Process each feature
+                            for feature in input_layer.getFeatures():
+                                # Get buffer distance with unit conversion
+                                buffer_distance = user_buffer_distance
+                                if self.dlg.feet.isChecked():
+                                    buffer_distance *= 0.3048  # Convert feet to meters
+                                
+                                # Create buffer with common method
+                                success = self.create_buffer_for_feature(
+                                    feature, buffer_layer, buffer_distance, input_layer,
+                                    transform, utm_crs, source_crs, "Geologic judgment - Uniform width"
+                                )
+                                if not success:
+                                    QgsMessageLog.logMessage(f"Failed to create buffer for feature {feature.id()}", "FaultBufferTool")
+                        
+                        QgsMessageLog.logMessage("Geologic judgment buffers created", "FaultBufferTool")
+                    
+                    except Exception as e:
+                        QgsMessageLog.logMessage(f"Error in Geologic judgment buffering: {str(e)}", "FaultBufferTool")
+                        QMessageBox.critical(self.dlg, "Error", f"Failed to create Geologic judgment buffers: {str(e)}")
+                        return
+                
+                else:
+                    # Process features using uncertainty tables
+                    feature_processed = 0
+                    for feature in input_layer.getFeatures():
+                        try:
+                            # Get uncertainty distance
+                            distance = self.get_uncertainty_distance(feature)
+                            if distance <= 0:
+                                QgsMessageLog.logMessage(f"Skipping feature {feature.id()}: invalid distance", "FaultBufferTool")
+                                continue
+                            
+                            # Create buffer with common method
+                            success = self.create_buffer_for_feature(
+                                feature, buffer_layer, distance, input_layer,
+                                transform, utm_crs, source_crs
+                            )
+                            if success:
+                                feature_processed += 1
+                            else:
+                                QgsMessageLog.logMessage(f"Failed to create buffer for feature {feature.id()}", "FaultBufferTool")
+                        except Exception as e:
+                            QgsMessageLog.logMessage(f"Error processing feature {feature.id()}: {str(e)}", "FaultBufferTool")
+                            continue
 
-                # --- Process Features ---
-                total_features = input_layer.featureCount()
-                processed_count = 0
-                failed_count = 0
-                skipped_count = 0
-
-                # Start editing session for the memory layer
-                buffer_layer.startEditing()
-
-                for feature in input_layer.getFeatures():
-                    buffer_distance = 0
-                    # Determine buffer distance based on mode
-                    if self.dlg.geologicJudgementRadioButton.isChecked():
-                        buffer_distance = self.get_buffer_distance_for_feature(feature)
-                        if buffer_distance <= 0:
-                            # Message already logged in get_buffer_distance_for_feature
-                            skipped_count += 1
-                            continue # Skip feature if distance is invalid/zero
-                    elif self.dlg.generalUncertaintyRadioButton.isChecked() or self.dlg.uncertaintyWithRankingRadioButton.isChecked():
-                        buffer_distance = self.get_uncertainty_distance(feature)
-                        if buffer_distance <= 0:
-                             QgsMessageLog.logMessage(f"Feature {feature.id()}: Skipping due to zero or negative uncertainty distance ({buffer_distance}).", "FaultBufferTool")
-                             skipped_count += 1
-                             continue # Skip feature
-                    else:
-                         # Should not happen if UI is set up correctly
-                         QgsMessageLog.logMessage(f"Feature {feature.id()}: No valid mode selected. Skipping.", "FaultBufferTool")
-                         skipped_count += 1
-                         continue
-
-                    # Create buffer for the feature
-                    success = self.create_buffer_for_feature(
-                        feature, buffer_layer, buffer_distance, input_layer,
-                        transform, utm_crs, source_crs
-                    )
-
-                    if success:
-                        processed_count += 1
-                    else:
-                        failed_count += 1
-                        # Error message logged within create_buffer_for_feature
-
-                    # Optional: Update progress bar if added to UI
-                    # self.iface.mainWindow().statusBar().showMessage(f"Processed {processed_count}/{total_features} features...")
-
-                # Commit changes to the memory layer
-                if not buffer_layer.commitChanges():
-                     QgsMessageLog.logMessage("Error committing changes to the memory buffer layer.", "FaultBufferTool")
-                     # Attempt rollback? Might not be necessary for memory layer.
-                     buffer_layer.rollBack() # Roll back just in case
-                     QMessageBox.critical(self.dlg, "Error", "Failed to commit features to the temporary buffer layer. Check logs.")
-                     return
-
-
-                QgsMessageLog.logMessage(f"Processing complete. Successfully buffered: {processed_count}, Failed: {failed_count}, Skipped: {skipped_count}", "FaultBufferTool")
-
-                if processed_count == 0:
-                     QMessageBox.warning(self.dlg, "No Buffers Created", "No features were successfully buffered. Please check the input data, selections, and QGIS Message Log for details.")
-                     return # Don't save an empty layer
-
-                # --- Save Output Layer ---
+                    if feature_processed == 0:
+                        QMessageBox.critical(self.dlg, "Error", "No features could be processed. Check log for details.")
+                        return
+                                    
+                QgsMessageLog.logMessage("Buffer created", "FaultBufferTool")
+                
+                # Save the buffer layer
                 options = QgsVectorFileWriter.SaveVectorOptions()
                 options.driverName = "ESRI Shapefile"
                 options.fileEncoding = "UTF-8"
-                # Important: If we transformed, save in the original CRS unless user wants projected
-                # For simplicity now, saving in the projected CRS (utm_crs) used for buffering
-                # To save back in original: options.ct = QgsCoordinateTransform(utm_crs, source_crs, ...)
-                options.layerName = os.path.splitext(os.path.basename(output_path))[0]
-
-                write_error, write_error_message = QgsVectorFileWriter.writeAsVectorFormatV3(
+                    
+                # Write the layer to file
+                error = QgsVectorFileWriter.writeAsVectorFormatV3(
                     buffer_layer,
                     output_path,
-                    QgsProject.instance().transformContext(), # Use project context
+                    QgsProject.instance().transformContext(),
                     options
                 )
 
-                if write_error != QgsVectorFileWriter.NoError:
-                    QMessageBox.critical(self.dlg, "Save Error", f"Failed to save buffer layer to:\n{output_path}\nError: {write_error_message}")
+                if error[0] != QgsVectorFileWriter.NoError:
+                    QMessageBox.critical(self.dlg, "Error", f"Failed to save buffer layer: {error}")
                     return
+                
+                # Add the new layer to the map with proper styling
+                output_name = os.path.splitext(os.path.basename(output_path))[0]
+                buffer_layer = QgsVectorLayer(output_path, output_name, "ogr")
+                if buffer_layer.isValid():
+                    # Load the style from the QML file
+                    style_path = os.path.join(os.path.dirname(__file__), "style_buffer.qml")
+                    buffer_layer.loadNamedStyle(style_path)
 
-                # --- Add Layer to Map ---
-                output_layer_name = options.layerName
-                result_layer = QgsVectorLayer(output_path, output_layer_name, "ogr")
-                if not result_layer.isValid():
-                     QMessageBox.critical(self.dlg, "Load Error", f"Failed to load the created buffer layer:\n{output_path}")
-                     return
+                    # Get the layer tree and input layer's node
+                    root = QgsProject.instance().layerTreeRoot()
+                    input_node = root.findLayer(input_layer.id())
+                    
+                    # Insert buffer layer below input layer
+                    if input_node:
+                        QgsProject.instance().addMapLayer(buffer_layer, False)  # False = don't add to legend
+                        buffer_node = root.insertLayer(root.children().index(input_node) + 1, buffer_layer)
+                    else:
+                        # Fallback: just add the layer normally
+                        QgsProject.instance().addMapLayer(buffer_layer)
 
-                # Apply style
-                style_path = os.path.join(os.path.dirname(__file__), "style_buffer.qml")
-                if os.path.exists(style_path):
-                    result_layer.loadNamedStyle(style_path)
-                    QgsMessageLog.logMessage("Applied style from style_buffer.qml", "FaultBufferTool")
+        
+                    buffer_layer.triggerRepaint()
+                    QMessageBox.information(self.dlg, "Success", 
+                        f"Buffer created successfully with symbology!")
                 else:
-                     QgsMessageLog.logMessage("Warning: style_buffer.qml not found. Using default style.", "FaultBufferTool")
-
-
-                # Add to project below input layer
-                project = QgsProject.instance()
-                root = project.layerTreeRoot()
-                input_node = root.findLayer(input_layer.id())
-                if input_node:
-                     # Insert below the input layer's node
-                     parent_node = input_node.parent()
-                     if parent_node:
-                          insert_index = parent_node.children().index(input_node) + 1
-                          parent_node.insertLayer(insert_index, result_layer)
-                     else: # input node is top-level
-                          insert_index = root.children().index(input_node) + 1
-                          root.insertLayer(insert_index, result_layer)
-                else:
-                     # Fallback: just add to top level
-                     project.addMapLayer(result_layer)
-
-
-                result_layer.triggerRepaint() # Refresh map canvas
-                self.iface.layerTreeView().refreshLayerSymbology(result_layer.id()) # Refresh legend
-
-                QMessageBox.information(self.dlg, "Success",
-                    f"Buffer layer created and saved successfully:\n{output_path}\n\nProcessed: {processed_count}\nFailed/Skipped: {failed_count + skipped_count}")
+                    QMessageBox.critical(self.dlg, "Error", "Failed to load output layer")
 
             except Exception as e:
-                QgsMessageLog.logMessage(f"Unexpected error during processing: {str(e)}", "FaultBufferTool", level=Qgis.Critical)
+                QgsMessageLog.logMessage(f"Unexpected error: {str(e)}", "FaultBufferTool")
                 import traceback
-                QgsMessageLog.logMessage(f"Traceback: {traceback.format_exc()}", "FaultBufferTool", level=Qgis.Critical)
-                QMessageBox.critical(self.dlg, "Critical Error", f"An unexpected error occurred: {str(e)}\n\nPlease check the QGIS Message Log (Plugins -> FaultBufferTool) for details.")
-                # Clean up temp layer? Not strictly necessary for memory layer.
+                QgsMessageLog.logMessage(f"Traceback: {traceback.format_exc()}", "FaultBufferTool")
+                QMessageBox.critical(self.dlg, "Error", f"An unexpected error occurred: {str(e)}")
                 return
