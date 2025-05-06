@@ -21,7 +21,7 @@
  *                                                                         *
  ***************************************************************************/
 """
-from qgis.PyQt.QtCore import QSettings, QTranslator, QCoreApplication, QVariant
+from qgis.PyQt.QtCore import QSettings, QTranslator, QCoreApplication, QVariant, QStandardPaths
 from qgis.PyQt.QtGui import QIcon
 from qgis.PyQt.QtWidgets import QAction, QMessageBox, QFileDialog, QPushButton
 from qgis import processing
@@ -461,8 +461,8 @@ class FaultBufferTool:
                 confidence_text = 'uncertain'
         
         # Only use the P or S field if Primary/Secondary checkbox is checked
-        if self.dlg.primarySecondaryCheckBox.isChecked() and 'P or S' in available_fields:
-            p_or_s = feature["P or S"].strip().upper()
+        if self.dlg.primarySecondaryCheckBox.isChecked() and 'PriSec' in available_fields:
+            p_or_s = feature["PriSec"].strip().upper()
             primary_secondary = 'primary' if p_or_s == 'P' else 'secondary'
         
         # Only use the SimpComp field if Simple/Complex checkbox is checked
@@ -537,8 +537,8 @@ class FaultBufferTool:
                 return False, "Required field 'Quality' not found in input layer for Confidence ranking!"
             
             # Only check for P or S field if Primary/Secondary checkbox is checked
-            if self.dlg.primarySecondaryCheckBox.isChecked() and 'P or S' not in available_fields:
-                return False, "Required field 'P or S' not found in input layer for Primary/Secondary ranking!"
+            if self.dlg.primarySecondaryCheckBox.isChecked() and 'PriSec' not in available_fields:
+                return False, "Required field 'PriSec' not found in input layer for Primary/Secondary ranking!"
             
             # Only check for SimpComp field if Simple/Complex checkbox is checked
             if self.dlg.simpleComplexCheckBox.isChecked() and 'SimpComp' not in available_fields:
@@ -920,6 +920,17 @@ class FaultBufferTool:
                 if not output_path.endswith('.shp'):
                     output_path += '.shp'
                     
+                if output_path and not os.path.dirname(output_path):
+                    # Get QGIS project folder as default location
+                    project_path = QgsProject.instance().homePath()
+                    if project_path:
+                        output_path = os.path.join(project_path, output_path)
+                    else:
+                        # Fallback to user's documents folder
+                        output_path = os.path.join(QStandardPaths.writableLocation(QStandardPaths.DocumentsLocation), output_path)
+                    
+                    QgsMessageLog.logMessage(f"Using default location, full path: {output_path}", "FaultBufferTool")
+    
                 # Log available fields for debugging
                 QgsMessageLog.logMessage(f"Available fields: {[f.name() for f in input_layer.fields()]}", "FaultBufferTool")
                 
@@ -972,8 +983,7 @@ class FaultBufferTool:
                 # Then add the buffer-specific fields
                 fields_to_add.extend([
                     QgsField("Buffer_Dist", QVariant.Double, len=20, prec=2),
-                    QgsField("Buffer_Type", QVariant.String, len=50),
-                    QgsField("Dip_Direction", QVariant.String, len=10)
+                    QgsField("Buffer_Type", QVariant.String, len=50)
                 ])
                 
                 # Add all fields to the buffer layer
