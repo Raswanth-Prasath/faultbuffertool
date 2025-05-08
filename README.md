@@ -81,25 +81,22 @@ Developed at Arizona State University, this tool aims to facilitate the use and 
 | Fault_type | Type of fault | S (strike-slip), N (normal), R (reverse) |
 | geo_unc | Custom uncertainty value | Integer value (in meters or feet) |
 
-## Credits
+<!-- ## Credits
 
 **Developers:**
-- Raswanth Prasath S V (Arizona State University)
+- Raswanth Prasath S V
 
 **Project Contributors:**
-- Chelsea Scott (Arizona State University)
-- Ramon Arrowsmith (Arizona State University)
-- Chris Madugo (Pacific Gas and Electric Company)
-- Albert Kottke (Pacific Gas and Electric Company)
+- Chelsea Scott -->
 
 ## License
 
 This plugin is licensed under GNU General Public License v2.0 or later.
 
-## Citation
+<!-- ## Citation
 
 If you use this tool in your research or publications, please cite:
-- Scott, C., Prasath, R., Arrowsmith, R., Madugo, C., & Kottke, A. (2025). Fault Buffer Tool: A GIS-based tool for quantifying uncertainty in mapped fault locations. *Journal of Structural Geology*.
+- Scott, C., Prasath, R., Arrowsmith, R., Madugo, C., & Kottke, A. (2025). Fault Buffer Tool: A GIS-based tool for quantifying uncertainty in mapped fault locations. *Journal of Structural Geology*. -->
 
 ## Support
 
