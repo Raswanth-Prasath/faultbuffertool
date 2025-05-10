@@ -81,13 +81,17 @@ Developed at Arizona State University, this tool aims to facilitate the use and 
 | Fault_type | Type of fault | S (strike-slip), N (normal), R (reverse) |
 | geo_unc | Custom uncertainty value | Integer value (in meters or feet) |
 
-<!-- ## Credits
+## Credits
 
 **Developers:**
 - Raswanth Prasath S V
 
 **Project Contributors:**
-- Chelsea Scott -->
+- Chelsea Scott
+
+## Acknowledgments 
+
+-We acknowledge support for this project from Pacific Gas and Electric, Co. 
 
 ## License
 
