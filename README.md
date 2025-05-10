@@ -91,7 +91,7 @@ Developed at Arizona State University, this tool aims to facilitate the use and 
 
 ## Acknowledgments 
 
--We acknowledge support for this project from Pacific Gas and Electric, Co. 
+We acknowledge support for this project from Pacific Gas and Electric, Co. 
 
 ## License
 
