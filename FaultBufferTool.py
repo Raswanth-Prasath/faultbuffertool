@@ -51,7 +51,7 @@ from .resources import *
 # Import the code for the dialog
 from .FaultBufferTool_dialog import FaultBufferToolDialog
 import os.path
-
+import shutil
 
 class FaultBufferTool:
     """QGIS Plugin Implementation."""
@@ -551,7 +551,6 @@ class FaultBufferTool:
         return True, ""
     
     # --- UI State Management ---
-
     def setupDialogConnections(self):
         """Set up signal connections for UI controls"""
         # Connect main uncertainty mode radio buttons
@@ -567,12 +566,6 @@ class FaultBufferTool:
         self.dlg.UniformFaultTypeRadioButton.toggled.connect(self.update_ui_state)
         self.dlg.FromShapefileFaultTypeRadioButton.toggled.connect(self.update_ui_state)
 
-        # Connect specific fault type radio buttons (might be overkill, but ensures consistency)
-        # self.dlg.StrikeslipFaultRadioButton.toggled.connect(self.update_ui_state)
-        # self.dlg.NormalFaultRadioButton.toggled.connect(self.update_ui_state)
-        # self.dlg.ReverseFaultRadioButton.toggled.connect(self.update_ui_state)
-
-
     def update_ui_state(self):
         """Updates the enabled/disabled state of UI elements based on selections."""
         if not self.dlg: return
@@ -581,8 +574,6 @@ class FaultBufferTool:
         is_general = self.dlg.generalUncertaintyRadioButton.isChecked()
         is_ranking = self.dlg.uncertaintyWithRankingRadioButton.isChecked()
         is_uniform_fault = self.dlg.UniformFaultTypeRadioButton.isChecked()
-        # is_shapefile_fault = self.dlg.FromShapefileFaultTypeRadioButton.isChecked() # Not directly needed below
-
 
         # --- Geologic Judgment Section ---
         self.dlg.fromShapefile.setEnabled(is_geologic)
@@ -596,14 +587,6 @@ class FaultBufferTool:
                 self.dlg.inputWidth.setChecked(True)
             if not (self.dlg.feet.isChecked() or self.dlg.meters.isChecked()):
                 self.dlg.meters.setChecked(True)
-        else:
-            # Uncheck sub-options if geologic mode is disabled (optional, but cleaner)
-            # self.dlg.fromShapefile.setChecked(False)
-            # self.dlg.inputWidth.setChecked(False)
-            # self.dlg.widthinput.clear()
-            # self.dlg.feet.setChecked(False)
-            # self.dlg.meters.setChecked(False)
-            pass # Let user selections persist but be disabled
 
 
         # --- Uncertainty Ranking Checkboxes ---
@@ -616,7 +599,6 @@ class FaultBufferTool:
             self.dlg.primarySecondaryCheckBox.setChecked(False)
             self.dlg.simpleComplexCheckBox.setChecked(False)
 
-
         # --- Percentile Radio Buttons ---
         enable_percentiles = is_general or is_ranking
         self.dlg.percentile50RadioButton.setEnabled(enable_percentiles)
@@ -628,10 +610,6 @@ class FaultBufferTool:
                     self.dlg.percentile84RadioButton.isChecked() or
                     self.dlg.percentile97RadioButton.isChecked()):
                 self.dlg.percentile50RadioButton.setChecked(True)
-        else:
-            # Auto-exclusive group handles unchecking others, but let's ensure the state is clean if needed
-            # self.dlg.percentile50RadioButton.setChecked(False) # Might fight auto-exclusivity
-             pass
 
 
         # --- Fault Type Specific Radio Buttons ---
@@ -645,14 +623,7 @@ class FaultBufferTool:
                     self.dlg.NormalFaultRadioButton.isChecked() or
                     self.dlg.ReverseFaultRadioButton.isChecked()):
                  self.dlg.StrikeslipFaultRadioButton.setChecked(True) # Default to Strike-slip
-        # else: # If not uniform, let selections persist but be disabled
-             # pass # No need to uncheck, just disable
 
-        # --- Optional: Update visibility/enabled state of Group Boxes ---
-        # self.dlg.groupBox_Geologic.setEnabled(is_geologic)
-        # self.dlg.groupBox_UncertaintyOptions.setEnabled(is_general or is_ranking)
-        # self.dlg.groupBox_RankingCriteria.setEnabled(is_ranking)
-        # self.dlg.groupBox_FaultTypeOptions.setEnabled(is_uniform_fault) # Maybe enable whole box
 
     def get_buffer_distance_for_feature(self, feature):
         """Get buffer distance based on geologic judgment settings"""
@@ -1104,10 +1075,30 @@ class FaultBufferTool:
                 output_name = os.path.splitext(os.path.basename(output_path))[0]
                 buffer_layer = QgsVectorLayer(output_path, output_name, "ogr")
                 if buffer_layer.isValid():
-                    # Load the style from the QML file
-                    style_path = os.path.join(os.path.dirname(__file__), "style_buffer.qml")
-                    buffer_layer.loadNamedStyle(style_path)
-
+                    # Get plugin directory and locate the QML file
+                    plugin_dir = os.path.dirname(__file__)
+                    style_path = os.path.join(plugin_dir, "style_buffer.qml")
+                    
+                    # Create a new path to save a copy of the QML alongside the output shapefile
+                    output_dir = os.path.dirname(output_path)
+                    output_qml_path = os.path.join(output_dir, f"{output_name}.qml")
+                    
+                    # Copy the QML file to the output directory if the original exists
+                    if os.path.exists(style_path):
+                        try:
+                            shutil.copy(style_path, output_qml_path)
+                            QgsMessageLog.logMessage(f"Style copied to: {output_qml_path}", "FaultBufferTool")
+                        except Exception as e:
+                            QgsMessageLog.logMessage(f"Failed to copy style: {str(e)}", "FaultBufferTool")
+                    else:
+                        QgsMessageLog.logMessage(f"Original style file not found at: {style_path}", "FaultBufferTool")
+                    
+                    # Load the style from the QML file (original path as fallback)
+                    if os.path.exists(output_qml_path):
+                        buffer_layer.loadNamedStyle(output_qml_path)
+                    elif os.path.exists(style_path):
+                        buffer_layer.loadNamedStyle(style_path)
+                    
                     # Get the layer tree and input layer's node
                     root = QgsProject.instance().layerTreeRoot()
                     input_node = root.findLayer(input_layer.id())
@@ -1120,10 +1111,10 @@ class FaultBufferTool:
                         # Fallback: just add the layer normally
                         QgsProject.instance().addMapLayer(buffer_layer)
 
-        
                     buffer_layer.triggerRepaint()
-                    QMessageBox.information(self.dlg, "Success", 
-                        f"Buffer created successfully with symbology!")
+                    
+                    # Inform user about the successful operation
+                    QMessageBox.information(self.dlg, "Success", f"Buffer created successfully with symbology!")
                 else:
                     QMessageBox.critical(self.dlg, "Error", "Failed to load output layer")
 
