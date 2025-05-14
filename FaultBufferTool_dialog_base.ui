@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>388</width>
-    <height>578</height>
+    <width>392</width>
+    <height>587</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -295,7 +295,7 @@
      </rect>
     </property>
     <property name="toolTip">
-     <string/>
+     <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p align=&quot;justify&quot;&gt;Apply this single uncertainty value to all mapped fault traces when the above results are inconsistent with geological judgment, perhaps reflecting the type and quality of data, the climate and/or characteristics of the fault.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt; </string>
     </property>
     <property name="text">
      <string>Geologic judgement</string>
