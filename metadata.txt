@@ -26,7 +26,6 @@ changelog=0.1 - Initial release with support for various buffer methods
 tags=fault, geology, buffer, uncertainty, vector
 
 homepage=https://github.com/Raswanth-Prasath/faultbuffertool
-category=Vector
 icon=icon.png
 # experimental flag
 experimental=False
