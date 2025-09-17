@@ -1054,6 +1054,21 @@ class FaultBufferTool:
                                     
                 QgsMessageLog.logMessage("Buffer created", "FaultBufferTool")
                 
+                dissolve_params = {
+                    'INPUT': buffer_layer,
+                    'FIELD': [], 
+                    'OUTPUT': 'TEMPORARY_OUTPUT',
+                    'SEPARATE_DISJOINT' : True
+                }
+                dissolve_result = processing.run("native:dissolve", dissolve_params)
+
+                if 'OUTPUT' not in dissolve_result:
+                    QMessageBox.critical(self.dlg, "Error", "Failed to dissolve buffer polygons.")
+                    return
+                
+                dissolved_layer = dissolve_result['OUTPUT']
+                QgsMessageLog.logMessage("Dissolve operation complete.", "FaultBufferTool")
+                
                 # Save the buffer layer
                 options = QgsVectorFileWriter.SaveVectorOptions()
                 options.driverName = "ESRI Shapefile"
@@ -1061,7 +1076,7 @@ class FaultBufferTool:
                     
                 # Write the layer to file
                 error = QgsVectorFileWriter.writeAsVectorFormatV3(
-                    buffer_layer,
+                    dissolved_layer,
                     output_path,
                     QgsProject.instance().transformContext(),
                     options
