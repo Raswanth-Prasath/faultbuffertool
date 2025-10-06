@@ -827,6 +827,11 @@ class FaultBufferTool:
                 buffer_feature.setAttribute("Dip_Direction", dip_direction if is_asymmetric and dip_direction else None)
             if "Buffer_Type" in buffer_field_names:
                 buffer_feature.setAttribute("Buffer_Type", fault_type_str)
+            if "Unc_Method" in buffer_field_names:
+                buffer_feature.setAttribute("Unc_Method", self.get_uncertainty_settings_string())
+            if "Percentile" in buffer_field_names:
+                percentile = self.get_selected_percentile() if not self.dlg.geologicJudgementRadioButton.isChecked() else None
+                buffer_feature.setAttribute("Percentile", percentile)
             
             # Add feature to buffer layer
             buffer_provider = buffer_layer.dataProvider()
@@ -842,6 +847,43 @@ class FaultBufferTool:
             import traceback
             QgsMessageLog.logMessage(f"Traceback: {traceback.format_exc()}", "FaultBufferTool")
             return False
+        
+    def get_uncertainty_settings_string(self):
+        """Generate a string describing the uncertainty calculation settings"""
+        if self.dlg.geologicJudgementRadioButton.isChecked():
+            if self.dlg.fromShapefile.isChecked():
+                return "Geologic_Judgment_Shapefile"
+            else:
+                units = "feet" if self.dlg.feet.isChecked() else "meters"
+                return f"Geologic_Judgment_{self.dlg.widthinput.text()}{units}"
+        
+        elif self.dlg.generalUncertaintyRadioButton.isChecked():
+            percentile = self.get_selected_percentile()
+            return f"General_Uncertainty_{percentile}"
+        
+        elif self.dlg.uncertaintyWithRankingRadioButton.isChecked():
+            percentile = self.get_selected_percentile()
+            rankings = []
+            if self.dlg.confidenceCheckBox.isChecked():
+                rankings.append("Conf")
+            if self.dlg.primarySecondaryCheckBox.isChecked():
+                rankings.append("PriSec")
+            if self.dlg.simpleComplexCheckBox.isChecked():
+                rankings.append("SimpComp")
+            
+            return f"Ranking_{percentile}_{'_'.join(rankings)}"
+        
+        return "Unknown"
+
+    def get_selected_percentile(self):
+        """Get the selected percentile as a string"""
+        if self.dlg.percentile50RadioButton.isChecked():
+            return "50th"
+        elif self.dlg.percentile84RadioButton.isChecked():
+            return "84th"
+        elif self.dlg.percentile97RadioButton.isChecked():
+            return "97th"
+        return "Unknown"
     
     def run(self):
         """Run method that performs all the real work"""
@@ -954,7 +996,9 @@ class FaultBufferTool:
                 # Then add the buffer-specific fields
                 fields_to_add.extend([
                     QgsField("Buffer_Dist", QVariant.Double, len=20, prec=2),
-                    QgsField("Buffer_Type", QVariant.String, len=50)
+                    QgsField("Buffer_Type", QVariant.String, len=50),
+                    QgsField("Unc_Method", QVariant.String, len=50),  
+                    QgsField("Percentile", QVariant.String, len=10)
                 ])
                 
                 # Add all fields to the buffer layer
@@ -1054,29 +1098,113 @@ class FaultBufferTool:
                                     
                 QgsMessageLog.logMessage("Buffer created", "FaultBufferTool")
                 
-                dissolve_params = {
-                    'INPUT': buffer_layer,
-                    'FIELD': [], 
-                    'OUTPUT': 'TEMPORARY_OUTPUT',
-                    'SEPARATE_DISJOINT' : True
-                }
-                dissolve_result = processing.run("native:dissolve", dissolve_params)
+                # Determine which layer to save based on merge checkbox
+                final_layer = buffer_layer  # Default: use individual buffers
 
-                if 'OUTPUT' not in dissolve_result:
-                    QMessageBox.critical(self.dlg, "Error", "Failed to dissolve buffer polygons.")
-                    return
-                
-                dissolved_layer = dissolve_result['OUTPUT']
-                QgsMessageLog.logMessage("Dissolve operation complete.", "FaultBufferTool")
-                
-                # Save the buffer layer
+                # Only dissolve if mergeBuffersCheckBox is checked
+                if self.dlg.mergeBuffersCheckBox.isChecked():
+                    QgsMessageLog.logMessage("Merge by ranking selected. Dissolving based on 'PriSec' field.", "FaultBufferTool")
+                    
+                    # Check if the required 'PriSec' field exists
+                    dissolve_field = []
+                    if 'PriSec' in [field.name() for field in buffer_layer.fields()]:
+                        dissolve_field = ['PriSec']
+                        QgsMessageLog.logMessage("Dissolving by PriSec field", "FaultBufferTool")
+                    else:
+                        QgsMessageBox.warning(self.dlg, "Warning", "Cannot merge by ranking because the 'PriSec' field is missing. All buffers will be merged.")
+                    
+                    # Step 1: Dissolve to create combined polygons
+                    dissolve_params = {
+                        'INPUT': buffer_layer,
+                        'FIELD': dissolve_field,
+                        'OUTPUT': 'TEMPORARY_OUTPUT',
+                        'SEPARATE_DISJOINT': True  # This keeps separate groups even with same PriSec
+                    }
+                    
+                    try:
+                        dissolve_result = processing.run("native:dissolve", dissolve_params)
+                        
+                        if 'OUTPUT' not in dissolve_result:
+                            QMessageBox.critical(self.dlg, "Error", "Failed to dissolve buffer polygons.")
+                            return
+                        
+                        dissolved_layer = dissolve_result['OUTPUT']
+                        QgsMessageLog.logMessage(f"Dissolved layer created with {dissolved_layer.featureCount()} features", "FaultBufferTool")
+                        
+                        # Step 2: Add statistics fields to dissolved layer
+                        dissolved_provider = dissolved_layer.dataProvider()
+                        dissolved_provider.addAttributes([
+                            QgsField("Avg_Buf_Dist", QVariant.Double, len=30, prec=2),
+                            QgsField("fault_count", QVariant.Int),
+                            QgsField("Unc_Method", QVariant.String, len=50),
+                            QgsField("Percentile", QVariant.String, len=10)
+                        ])
+                        dissolved_layer.updateFields()
+                        
+                        # Step 3: For each dissolved polygon, find which original buffers it contains
+                        dissolved_layer.startEditing()
+                        
+                        for dissolved_feat in dissolved_layer.getFeatures():
+                            dissolved_geom = dissolved_feat.geometry()
+                            
+                            # Find all original buffers that intersect this dissolved polygon
+                            matching_distances = []
+                            unc_method = None
+                            percentile = None
+                            
+                            for original_feat in buffer_layer.getFeatures():
+                                original_geom = original_feat.geometry()
+                                
+                                # Check if the original buffer intersects the dissolved polygon
+                                if dissolved_geom.intersects(original_geom):
+                                    buffer_dist = original_feat['Buffer_Dist']
+                                    if buffer_dist is not None:
+                                        matching_distances.append(buffer_dist)
+                                    
+                                    # Get metadata from first matching feature
+                                    if unc_method is None:
+                                        unc_method = original_feat['Unc_Method']
+                                        percentile = original_feat['Percentile']
+                            
+                            # Calculate statistics for this dissolved polygon
+                            if matching_distances:
+                                dissolved_feat['Avg_Buf_Dist'] = sum(matching_distances) / len(matching_distances) 
+                                dissolved_feat['fault_count'] = len(matching_distances)
+                                dissolved_feat['Unc_Method'] = unc_method
+                                dissolved_feat['Percentile'] = percentile
+                                
+                                dissolved_layer.updateFeature(dissolved_feat)
+                        
+                        dissolved_layer.commitChanges()
+                        
+                        # Remove Buffer_Dist field since we now have Avg_Buf_Dist, Min_Buf_Dist, Max_Buf_Dist
+                        if 'Buffer_Dist' in [f.name() for f in dissolved_layer.fields()]:
+                            buffer_dist_idx = dissolved_layer.fields().indexFromName('Buffer_Dist')
+                            dissolved_provider.deleteAttributes([buffer_dist_idx])
+                            dissolved_layer.updateFields()
+                            QgsMessageLog.logMessage("Removed Buffer_Dist field from merged output", "FaultBufferTool")
+                            
+                        final_layer = dissolved_layer
+                        
+                        QgsMessageLog.logMessage("Dissolve and statistics calculation complete.", "FaultBufferTool")
+                        
+                    except Exception as e:
+                        QgsMessageLog.logMessage(f"Error in dissolve operation: {str(e)}", "FaultBufferTool")
+                        import traceback
+                        QgsMessageLog.logMessage(f"Traceback: {traceback.format_exc()}", "FaultBufferTool")
+                        QMessageBox.critical(self.dlg, "Error", f"Failed to merge buffers: {str(e)}")
+                        return
+                else:
+                    QgsMessageLog.logMessage("No merging selected. Using individual buffers.", "FaultBufferTool")
+
+                # Save the final layer (either individual buffers or dissolved)
                 options = QgsVectorFileWriter.SaveVectorOptions()
                 options.driverName = "ESRI Shapefile"
                 options.fileEncoding = "UTF-8"
                     
                 # Write the layer to file
                 error = QgsVectorFileWriter.writeAsVectorFormatV3(
-                    dissolved_layer,
+                    final_layer,  # Use final_layer instead of buffer_layer
                     output_path,
                     QgsProject.instance().transformContext(),
                     options

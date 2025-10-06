@@ -7,7 +7,7 @@
     <x>0</x>
     <y>0</y>
     <width>388</width>
-    <height>614</height>
+    <height>626</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -17,7 +17,7 @@
    <property name="geometry">
     <rect>
      <x>30</x>
-     <y>570</y>
+     <y>589</y>
      <width>341</width>
      <height>32</height>
     </rect>
@@ -42,59 +42,24 @@
     <string>Fault line layer</string>
    </property>
   </widget>
-  <widget class="QLabel" name="label_4">
-   <property name="geometry">
-    <rect>
-     <x>20</x>
-     <y>60</y>
-     <width>55</width>
-     <height>16</height>
-    </rect>
-   </property>
-   <property name="text">
-    <string>Save file</string>
-   </property>
-  </widget>
   <widget class="QgsMapLayerComboBox" name="mMapLayerComboBox">
    <property name="geometry">
     <rect>
      <x>150</x>
      <y>20</y>
-     <width>181</width>
+     <width>191</width>
      <height>27</height>
     </rect>
    </property>
    <property name="acceptDrops">
     <bool>false</bool>
-   </property>
-  </widget>
-  <widget class="QgsFileWidget" name="mQgsFileWidget">
-   <property name="geometry">
-    <rect>
-     <x>150</x>
-     <y>60</y>
-     <width>181</width>
-     <height>27</height>
-    </rect>
-   </property>
-   <property name="acceptDrops">
-    <bool>false</bool>
-   </property>
-   <property name="whatsThis">
-    <string/>
-   </property>
-   <property name="filter">
-    <string/>
-   </property>
-   <property name="storageMode">
-    <enum>QgsFileWidget::SaveFile</enum>
    </property>
   </widget>
   <widget class="QGroupBox" name="groupBox">
    <property name="geometry">
     <rect>
      <x>20</x>
-     <y>380</y>
+     <y>337</y>
      <width>351</width>
      <height>151</height>
     </rect>
@@ -148,7 +113,7 @@
     </property>
     <layout class="QVBoxLayout" name="verticalLayout_2">
      <property name="spacing">
-      <number>5</number>
+      <number>3</number>
      </property>
      <item>
       <widget class="QRadioButton" name="StrikeslipFaultRadioButton">
@@ -181,7 +146,7 @@
    <property name="geometry">
     <rect>
      <x>20</x>
-     <y>93</y>
+     <y>52</y>
      <width>351</width>
      <height>281</height>
     </rect>
@@ -311,6 +276,9 @@
      </rect>
     </property>
     <layout class="QGridLayout" name="gridLayout_2">
+     <property name="verticalSpacing">
+      <number>3</number>
+     </property>
      <item row="0" column="0">
       <widget class="QRadioButton" name="fromShapefile">
        <property name="toolTip">
@@ -347,9 +315,9 @@
     <property name="geometry">
      <rect>
       <x>210</x>
-      <y>214</y>
+      <y>194</y>
       <width>131</width>
-      <height>51</height>
+      <height>71</height>
      </rect>
     </property>
     <property name="contextMenuPolicy">
@@ -358,16 +326,19 @@
     <property name="title">
      <string>Units</string>
     </property>
-    <widget class="QWidget" name="horizontalLayoutWidget">
+    <widget class="QWidget" name="verticalLayoutWidget">
      <property name="geometry">
       <rect>
-       <x>10</x>
+       <x>20</x>
        <y>20</y>
-       <width>125</width>
-       <height>31</height>
+       <width>101</width>
+       <height>49</height>
       </rect>
      </property>
-     <layout class="QHBoxLayout" name="horizontalLayout_2">
+     <layout class="QVBoxLayout" name="verticalLayout_3">
+      <property name="spacing">
+       <number>3</number>
+      </property>
       <item>
        <widget class="QRadioButton" name="feet">
         <property name="toolTip">
@@ -447,21 +418,69 @@
     </property>
    </widget>
   </widget>
-  <widget class="QCheckBox" name="mergeBuffersCheckBox">
+  <widget class="QGroupBox" name="groupBox_3">
    <property name="geometry">
     <rect>
      <x>20</x>
-     <y>540</y>
-     <width>171</width>
-     <height>20</height>
+     <y>490</y>
+     <width>351</width>
+     <height>91</height>
     </rect>
    </property>
-   <property name="text">
-    <string>Merge buffers by ranking</string>
+   <property name="title">
+    <string>Output</string>
    </property>
-   <property name="checked">
-    <bool>true</bool>
-   </property>
+   <widget class="QgsFileWidget" name="mQgsFileWidget">
+    <property name="geometry">
+     <rect>
+      <x>103</x>
+      <y>24</y>
+      <width>221</width>
+      <height>27</height>
+     </rect>
+    </property>
+    <property name="acceptDrops">
+     <bool>false</bool>
+    </property>
+    <property name="whatsThis">
+     <string/>
+    </property>
+    <property name="filter">
+     <string/>
+    </property>
+    <property name="storageMode">
+     <enum>QgsFileWidget::SaveFile</enum>
+    </property>
+   </widget>
+   <widget class="QLabel" name="label_4">
+    <property name="geometry">
+     <rect>
+      <x>13</x>
+      <y>29</y>
+      <width>55</width>
+      <height>16</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>Save file</string>
+    </property>
+   </widget>
+   <widget class="QCheckBox" name="mergeBuffersCheckBox">
+    <property name="geometry">
+     <rect>
+      <x>20</x>
+      <y>60</y>
+      <width>171</width>
+      <height>20</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>Merge buffers by ranking</string>
+    </property>
+    <property name="checked">
+     <bool>true</bool>
+    </property>
+   </widget>
   </widget>
  </widget>
  <customwidgets>
