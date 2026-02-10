@@ -70,7 +70,8 @@ class FaultBufferTool:
         # initialize plugin directory
         self.plugin_dir = os.path.dirname(__file__)
         # initialize locale
-        locale = QSettings().value('locale/userLocale')[0:2]
+        locale_value = QSettings().value('locale/userLocale')
+        locale = locale_value[0:2] if locale_value else 'en'
         locale_path = os.path.join(
             self.plugin_dir,
             'i18n',
@@ -529,10 +530,17 @@ class FaultBufferTool:
         """
         available_fields = [f.name() for f in input_layer.fields()]
         QgsMessageLog.logMessage(f"Available fields: {available_fields}", "FaultBufferTool")
+
+        # Dip_direct is only strictly required when the user forces a uniform
+        # non-strike-slip fault type for all features.
+        requires_dip_direction = (
+            self.dlg.UniformFaultTypeRadioButton.isChecked() and
+            not self.dlg.StrikeslipFaultRadioButton.isChecked()
+        )
         
         # If using geologic judgment, no field checks needed except Dip_direct for non-strike-slip faults
         if self.dlg.geologicJudgementRadioButton.isChecked():
-            if not self.dlg.StrikeslipFaultRadioButton.isChecked():
+            if requires_dip_direction:
                 if 'Dip_direct' not in available_fields:
                     return False, "Field 'Dip_direct' is required for normal/reverse faults with geologic judgment option"
             return True, ""
@@ -551,8 +559,10 @@ class FaultBufferTool:
             if self.dlg.simpleComplexCheckBox.isChecked() and 'SimpComp' not in available_fields:
                 return False, "Required field 'SimpComp' not found in input layer for Simple/Complex ranking!"
             
-            # Check for Dip_direct if not using Strike-slip fault type
-            if not self.dlg.StrikeslipFaultRadioButton.isChecked() and 'Dip_direct' not in available_fields:
+            # Check for Dip_direct only for uniform normal/reverse fault type.
+            # For 'From shapefile' fault type, missing/invalid Dip_direct is
+            # handled per-feature by symmetric fallback.
+            if requires_dip_direction and 'Dip_direct' not in available_fields:
                 return False, "Field 'Dip_direct' is required for normal/reverse faults"
         
         return True, ""
