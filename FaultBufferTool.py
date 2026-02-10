@@ -42,7 +42,8 @@ from qgis.core import (
     QgsCoordinateTransform,
     QgsDistanceArea,
     QgsPointXY,
-    QgsGeometry
+    QgsGeometry,
+    QgsSpatialIndex
 )
 from qgis.gui import QgsFileWidget
 
@@ -341,7 +342,7 @@ class FaultBufferTool:
             elif dip_direction.upper() == 'NE':
                 dx, dy = diagonal_dist, diagonal_dist
             elif dip_direction.upper() == 'NW':
-                dx, dy = -diagonal_dist, translation_dist
+                dx, dy = -diagonal_dist, diagonal_dist
             elif dip_direction.upper() == 'SE':
                 dx, dy = diagonal_dist, -diagonal_dist
             elif dip_direction.upper() == 'SW':
@@ -367,7 +368,6 @@ class FaultBufferTool:
             temp_provider = temp_layer.dataProvider()
             temp_feat = QgsFeature()
             temp_feat.setGeometry(geometry)
-            temp_provider.addFeatures([temp_feat])
             if not temp_provider.addFeatures([temp_feat]):
                 QgsMessageLog.logMessage("Failed to add feature to temporary layer", "FaultBufferTool")
                 return None
@@ -436,7 +436,10 @@ class FaultBufferTool:
             percentile = '84th'
         elif self.dlg.percentile97RadioButton.isChecked():
             percentile = '97th'
-        
+        else:
+            percentile = '50th'
+            QgsMessageLog.logMessage("No percentile selected, defaulting to 50th", "FaultBufferTool")
+
         # General uncertainty (ignore rankings)
         if self.dlg.generalUncertaintyRadioButton.isChecked():
             return self.uncertainty_table['general'][percentile]
@@ -462,16 +465,20 @@ class FaultBufferTool:
         
         # Only use the P or S field if Primary/Secondary checkbox is checked
         if self.dlg.primarySecondaryCheckBox.isChecked() and 'PriSec' in available_fields:
-            p_or_s = feature["PriSec"].strip().upper()
-            primary_secondary = 'primary' if p_or_s == 'P' else 'secondary'
+            p_or_s_raw = feature["PriSec"]
+            if p_or_s_raw and isinstance(p_or_s_raw, str):
+                p_or_s = p_or_s_raw.strip().upper()
+                primary_secondary = 'primary' if p_or_s == 'P' else 'secondary'
         
         # Only use the SimpComp field if Simple/Complex checkbox is checked
         if self.dlg.simpleComplexCheckBox.isChecked() and 'SimpComp' in available_fields:
-            simp_comp = feature['SimpComp'].strip().upper()
-            if simp_comp == 'C':
-                simple_complex = 'complex'
-            elif simp_comp == 'S':
-                simple_complex = 'simple'
+            simp_comp_raw = feature['SimpComp']
+            if simp_comp_raw and isinstance(simp_comp_raw, str):
+                simp_comp = simp_comp_raw.strip().upper()
+                if simp_comp == 'C':
+                    simple_complex = 'complex'
+                elif simp_comp == 'S':
+                    simple_complex = 'simple'
         
         # Determine which criteria are selected
         conf_selected = self.dlg.confidenceCheckBox.isChecked()
@@ -887,19 +894,15 @@ class FaultBufferTool:
     
     def run(self):
         """Run method that performs all the real work"""
-        # Create the dialog
-        self.dlg = FaultBufferToolDialog()
         
         # Create the dialog with elements (after translation) and keep reference
         # Only create GUI ONCE in callback, so that it will only load when the plugin is started
         if self.first_start == True:
             self.first_start = False
             self.dlg = FaultBufferToolDialog()
-            
-        self.dlg.setupUi(self.dlg)
-        
+            self.setupDialogConnections() # Connect signals to slots
+                    
         # --- Setup UI Connections and Initial State ---
-        self.setupDialogConnections() # Connect signals to slots
         self.update_ui_state() # Set the initial enabled/disabled states
     
         # Configure the file widget explicitly
@@ -1111,7 +1114,7 @@ class FaultBufferTool:
                         dissolve_field = ['PriSec']
                         QgsMessageLog.logMessage("Dissolving by PriSec field", "FaultBufferTool")
                     else:
-                        QgsMessageBox.warning(self.dlg, "Warning", "Cannot merge by ranking because the 'PriSec' field is missing. All buffers will be merged.")
+                        QMessageBox.warning(self.dlg, "Warning", "Cannot merge by ranking because the 'PriSec' field is missing. All buffers will be merged.")
                     
                     # Step 1: Dissolve to create combined polygons
                     dissolve_params = {
@@ -1142,25 +1145,31 @@ class FaultBufferTool:
                         dissolved_layer.updateFields()
                         
                         # Step 3: For each dissolved polygon, find which original buffers it contains
+                        # Build spatial index for fast lookup
+                        spatial_index = QgsSpatialIndex(buffer_layer.getFeatures())
+                        buffer_features = {f.id(): f for f in buffer_layer.getFeatures()}
+
                         dissolved_layer.startEditing()
-                        
+
                         for dissolved_feat in dissolved_layer.getFeatures():
                             dissolved_geom = dissolved_feat.geometry()
-                            
-                            # Find all original buffers that intersect this dissolved polygon
+
+                            # Find candidate buffers using spatial index (fast bounding-box check)
+                            candidate_ids = spatial_index.intersects(dissolved_geom.boundingBox())
+
                             matching_distances = []
                             unc_method = None
                             percentile = None
-                            
-                            for original_feat in buffer_layer.getFeatures():
-                                original_geom = original_feat.geometry()
-                                
-                                # Check if the original buffer intersects the dissolved polygon
-                                if dissolved_geom.intersects(original_geom):
+
+                            for fid in candidate_ids:
+                                original_feat = buffer_features[fid]
+
+                                # Precise geometry intersection check
+                                if dissolved_geom.intersects(original_feat.geometry()):
                                     buffer_dist = original_feat['Buffer_Dist']
                                     if buffer_dist is not None:
                                         matching_distances.append(buffer_dist)
-                                    
+
                                     # Get metadata from first matching feature
                                     if unc_method is None:
                                         unc_method = original_feat['Unc_Method']
@@ -1224,6 +1233,13 @@ class FaultBufferTool:
                     
                     # Create a new path to save a copy of the QML alongside the output shapefile
                     output_dir = os.path.dirname(output_path)
+                    if output_dir and not os.path.isdir(output_dir):
+                        QMessageBox.critical(self.dlg, "Error", f"Output directory does not exist: {output_dir}")
+                        return
+
+                    if not os.access(output_dir or '.', os.W_OK):
+                        QMessageBox.critical(self.dlg, "Error", f"Output directory is not writable: {output_dir}")
+                        return
                     output_qml_path = os.path.join(output_dir, f"{output_name}.qml")
                     
                     # Copy the QML file to the output directory if the original exists
