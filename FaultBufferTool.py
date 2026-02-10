@@ -40,6 +40,7 @@ from qgis.core import (
     QgsMessageLog,
     QgsCoordinateReferenceSystem,
     QgsCoordinateTransform,
+    QgsUnitTypes,
     QgsDistanceArea,
     QgsPointXY,
     QgsGeometry,
@@ -90,18 +91,18 @@ class FaultBufferTool:
         # Must be set in initGui() to survive plugin reloads
         self.first_start = None
         self.dlg = None
-        self.buffer_distances = {
-            ('P', 1): 200,  # Primary, Quality 1
-            ('P', 2): 80,   # Primary, Quality 2
-            ('P', 3): 30,   # Primary, Quality 3
-            ('P', 4): 10,   # Primary, Quality 4
-            ('S', 1): 300,  # Secondary, Quality 1
-            ('S', 2): 100,  # Secondary, Quality 2
-            ('S', 3): 70,   # Secondary, Quality 3
-            ('S', 4): 20    # Secondary, Quality 4
-        }
+        # self.buffer_distances = {
+        #     ('P', 1): 200,  # Primary, Quality 1
+        #     ('P', 2): 80,   # Primary, Quality 2
+        #     ('P', 3): 30,   # Primary, Quality 3
+        #     ('P', 4): 10,   # Primary, Quality 4
+        #     ('S', 1): 300,  # Secondary, Quality 1
+        #     ('S', 2): 100,  # Secondary, Quality 2
+        #     ('S', 3): 70,   # Secondary, Quality 3
+        #     ('S', 4): 20    # Secondary, Quality 4
+        # }
 
-        # Uncertainty table for different criteria - UPDATED based on the provided text
+        # Uncertainty table for different criteria
         self.uncertainty_table = {
             # General uncertainty for a predicted rupture
             'general': {
@@ -299,13 +300,14 @@ class FaultBufferTool:
         # Calculate UTM zone
         # The Earth is divided into 60 UTM zones, each 6 degrees wide
         # We add 180 to shift from (-180,180) range to (0,360) range
-        # Then divide by 6 to get the zone number (1-60)
+        # Then divide by 6 to get the zone number (1-60). Clamp for edge cases.
         zone = int((longitude + 180) / 6) + 1
+        zone = max(1, min(zone, 60))
         
         # Determine if Northern or Southern hemisphere
-        # - 326xx for Northern hemisphere (latitude > 0)
+        # - 326xx for Northern hemisphere (latitude >= 0)
         # - 327xx for Southern hemisphere (latitude < 0)
-        if latitude > 0:
+        if latitude >= 0:
             epsg = f"326{zone:02d}"  # Northern hemisphere
         else:
             epsg = f"327{zone:02d}"  # Southern hemisphere
@@ -702,8 +704,8 @@ class FaultBufferTool:
             geometry = feature.geometry()
             
             # Transform to projected CRS if needed
+            geometry = QgsGeometry(feature.geometry())  # deep copy
             if transform and utm_crs:
-                QgsMessageLog.logMessage(f"Transforming geometry from {source_crs.authid()} to {utm_crs.authid()}", "FaultBufferTool")
                 geometry.transform(transform)
             
             # Set number of segments for buffer
@@ -969,28 +971,45 @@ class FaultBufferTool:
                 # Get and check the layer's CRS
                 source_crs = input_layer.crs()
                                
-                # If the CRS is isgeographic, (like EPSG:4326), we'll need to transform to a projected CRS
-                if source_crs.isGeographic():
-                    # Print some debug information
-                    QgsMessageLog.logMessage(f"Source CRS is geographic: {source_crs.description()}", "Buffer Tool")
-                    
-                    # Get the UTM zome for the layer's extent
-                    center_point = input_layer.extent().center()
-                    utm_crs = self.get_utm_crs(center_point.x(), center_point.y()) # Get UTM CRS based on center point
+                # Buffer distances are defined in meters. Use a metric working CRS
+                # whenever the source CRS is geographic or projected in non-meter units.
+                requires_metric_working_crs = (
+                    source_crs.isGeographic() or
+                    source_crs.mapUnits() != QgsUnitTypes.DistanceMeters
+                )
 
-                    QgsMessageLog.logMessage(f"Selected UTM CRS: {utm_crs.description()}", "Buffer Tool") 
-                    
-                    # Create transform context
-                    transform = QgsCoordinateTransform(source_crs, utm_crs, QgsProject.instance()) 
-                    
-                    # Create new layer in UTM projection
+                if requires_metric_working_crs:
+                    QgsMessageLog.logMessage(
+                        f"Source CRS requires metric reprojection: {source_crs.description()}",
+                        "Buffer Tool"
+                    )
+
+                    # Get layer center in lon/lat to pick an appropriate UTM zone.
+                    center_point = input_layer.extent().center()
+                    if source_crs.isGeographic():
+                        center_lon, center_lat = center_point.x(), center_point.y()
+                    else:
+                        wgs84_crs = QgsCoordinateReferenceSystem("EPSG:4326")
+                        to_wgs84 = QgsCoordinateTransform(source_crs, wgs84_crs, QgsProject.instance())
+                        center_wgs84 = to_wgs84.transform(center_point)
+                        center_lon, center_lat = center_wgs84.x(), center_wgs84.y()
+
+                    # Get UTM CRS based on geographic center point.
+                    utm_crs = self.get_utm_crs(center_lon, center_lat)
+                    QgsMessageLog.logMessage(f"Selected UTM CRS: {utm_crs.description()}", "Buffer Tool")
+
+                    # Transform source features to UTM before buffering.
+                    transform = QgsCoordinateTransform(source_crs, utm_crs, QgsProject.instance())
                     buffer_layer = QgsVectorLayer(f"Polygon?crs={utm_crs.authid()}", "buffers", "memory")
                 else:
-                    # Use the same CRS as input if it's already projected
-                    QgsMessageLog.logMessage(f"Source CRS is projected: {source_crs.description()}", "Buffer Tool")
+                    # Source CRS already uses meters, so no transform needed.
+                    QgsMessageLog.logMessage(
+                        f"Source CRS already metric and projected: {source_crs.description()}",
+                        "Buffer Tool"
+                    )
                     buffer_layer = QgsVectorLayer(f"Polygon?crs={source_crs.authid()}", "buffers", "memory")
                     transform = None
-                    utm_crs = source_crs  # No need to transform if already projected
+                    utm_crs = source_crs
                 
                 QgsMessageLog.logMessage(f"Input CRS: {source_crs.authid()}", "FaultBufferTool")
                 QgsMessageLog.logMessage(f"Buffer layer CRS: {buffer_layer.crs().authid()}", "FaultBufferTool")
@@ -1008,7 +1027,9 @@ class FaultBufferTool:
                 
                 # Then add the buffer-specific fields
                 fields_to_add.extend([
+                    QgsField("original_id", QVariant.Int),
                     QgsField("Buffer_Dist", QVariant.Double, len=20, prec=2),
+                    QgsField("Dip_Direction", QVariant.String, len=10),
                     QgsField("Buffer_Type", QVariant.String, len=50),
                     QgsField("Unc_Method", QVariant.String, len=50),  
                     QgsField("Percentile", QVariant.String, len=10)
@@ -1025,6 +1046,7 @@ class FaultBufferTool:
                 if self.dlg.geologicJudgementRadioButton.isChecked():
                     # Handle Geologic judgment option
                     try:
+                        feature_processed = 0
                         # Check if user selected "From shapefile" or "Input width"
                         if self.dlg.fromShapefile.isChecked():
                             # Validate geo_unc field exists
@@ -1045,7 +1067,9 @@ class FaultBufferTool:
                                     feature, buffer_layer, buffer_distance, input_layer,
                                     transform, utm_crs, source_crs, "Geologic judgment - From shapefile"
                                 )
-                                if not success:
+                                if success:
+                                    feature_processed += 1
+                                else:
                                     QgsMessageLog.logMessage(f"Failed to create buffer for feature {feature.id()}", "FaultBufferTool")
                         
                         else:  # Input width selected
@@ -1071,8 +1095,14 @@ class FaultBufferTool:
                                     feature, buffer_layer, buffer_distance, input_layer,
                                     transform, utm_crs, source_crs, "Geologic judgment - Uniform width"
                                 )
-                                if not success:
+                                if success:
+                                    feature_processed += 1
+                                else:
                                     QgsMessageLog.logMessage(f"Failed to create buffer for feature {feature.id()}", "FaultBufferTool")
+
+                        if feature_processed == 0:
+                            QMessageBox.critical(self.dlg, "Error", "No features could be processed in Geologic judgment mode. Check log for details.")
+                            return
                         
                         QgsMessageLog.logMessage("Geologic judgment buffers created", "FaultBufferTool")
                     
